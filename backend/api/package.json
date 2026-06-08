@@ -1,0 +1,43 @@
+{
+  "name": "truxify-backend-api",
+  "version": "1.0.0",
+  "description": "Truxify Backend API - Node.js, Express, WebSockets",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "firebase-admin": "^13.10.0",
+    "ioredis": "^5.11.0",
+    "mongodb": "^7.2.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.8",
+    "nodemon": "^3.1.2",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.8"
+  },
+  "keywords": [
+    "express",
+    "websockets",
+    "supabase",
+    "mongodb",
+    "redis",
+    "firebase"
+  ],
+  "author": "Truxify Dev Team",
+  "license": "ISC"
+}
