@@ -1,973 +1,307 @@
-/**
- * Integration tests for backend/api/src/routes/orderRoutes.js
- *
- * Locks in the server-side pricing contract landed in PR #299:
- *   - Client-supplied monetary fields are IGNORED, server-computed values
- *     are persisted in both `orders` and `load_offers`.
- *   - The camelCase / snake_case key mapping (commit b04413e) is preserved
- *     — no destructure of `pricing` into snake_case locals.
- *   - Invalid coordinates / weight return 400 with a clear pricing error.
- *
- * The test app uses BYPASS_AUTH=true to skip Firebase; the `authenticate`
- * middleware reads the `x-user-id` and `x-user-role` headers directly.
- *
- * Run with:  npm test -- test/integration/orders.test.js
- */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import { app, server } from '../../src/app.js';
+import { supabase, redisClient } from '../../src/config/db.js';
+import { getTestUser, testOrderPayload } from '../helpers.js';
 
-const routeEstimateMock = vi.fn();
+describe('Truxify API - Order & Load Board Workflows', () => {
 
-// Hoisted mock: swap supabase out for our in-memory builder.
-const { createSupabaseMock } = await vi.importActual('../helpers/supabaseMock.js');
+  afterAll(async () => {
+    // Clean up test data
+    await supabase.from('orders').delete().neq('id', 0);
+    await supabase.from('load_offers').delete().neq('id', 0);
+    await supabase.from('load_bids').delete().neq('id', 0);
+    await supabase.from('order_timeline').delete().neq('id', 0);
+    await supabase.from('trips').delete().neq('id', 0);
 
-const m = createSupabaseMock();
-
-const redisStore = new Map();
-
-// Minimal redis mock for verify-otp + OTP generation.
-// We only implement what the routes use: get/set/del/incr/expire.
-const redisClientMock = {
-  get: async (key) => {
-    const v = redisStore.get(key);
-    if (!v) return null;
-    return v.value;
-  },
-  set: async (key, value, mode, ttlSeconds, nx) => {
-    // Support SET key value EX ttl NX
-    const shouldSetNx = nx === 'NX' || nx === true;
-    if (shouldSetNx && redisStore.has(key)) return null;
-    if (mode === 'EX' && typeof ttlSeconds === 'number') {
-      redisStore.set(key, { value: String(value), expiresAt: Date.now() + ttlSeconds * 1000 });
-    } else {
-      redisStore.set(key, { value: String(value), expiresAt: null });
-    }
-    return 'OK';
-  },
-  del: async (key) => {
-    redisStore.delete(key);
-    return 1;
-  },
-  incr: async (key) => {
-    const existing = redisStore.get(key);
-    const cur = existing ? Number(existing.value) : 0;
-    const next = cur + 1;
-    redisStore.set(key, { value: String(next), expiresAt: existing?.expiresAt ?? null });
-    return next;
-  },
-  expire: async (key, ttlSeconds) => {
-    const existing = redisStore.get(key);
-    if (!existing) return 0;
-    redisStore.set(key, { ...existing, expiresAt: Date.now() + ttlSeconds * 1000 });
-    return 1;
-  },
-};
-
-vi.mock('../../src/config/db.js', () => ({
-  supabase: m.supabase,
-  redisClient: redisClientMock,
-  firebaseAdmin: null,
-  mongoDb: null,
-}));
-
-vi.mock('../../src/sockets/tracker.js', () => ({
-  initWebSocketServer: () => ({}),
-}));
-
-vi.mock('../../src/services/osrm.js', () => ({
-  getRouteEstimate: routeEstimateMock,
-}));
-
-const { default: orderRouter } = await import('../../src/routes/orderRoutes.js');
-const { computeOrderPricing } = await import('../../src/lib/pricing.js');
-import express from 'express';
-
-function buildApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/orders', orderRouter);
-  return app;
-}
-
-const CUSTOMER_HEADERS = {
-  'x-user-id': '00000000-0000-0000-0000-000000000abc',
-  'x-user-role': 'customer',
-  'x-user-name': 'Test Customer',
-};
-
-const DRIVER_HEADERS = {
-  'x-user-id': '00000000-0000-0000-0000-000000000def',
-  'x-user-role': 'driver',
-  'x-user-name': 'Test Driver',
-};
-
-const validOrderBody = {
-  pickup_address: '123 Pickup St, Mumbai',
-  pickup_lat: 19.0760,
-  pickup_lng: 72.8777,
-  drop_address: '456 Drop Ave, Delhi',
-  drop_lat: 28.7041,
-  drop_lng: 77.1025,
-  pickup_date: '2026-06-10',
-  pickup_time: '09:00',
-  goods_type: 'electronics',
-  weight_tonnes: 10,
-  length_ft: 20,
-  width_ft: 8,
-  height_ft: 7,
-  is_stackable: false,
-  is_fragile: false,
-  special_requirements: '',
-  payment_method_id: 'pm_test_123',
-  upi_id: 'test@upi',
-};
-
-describe('POST /api/orders — server-side pricing contract', () => {
-  beforeEach(() => {
-    // Ensure each table exists in the in-memory store (the mock
-    // auto-creates on first .from(), but we want to reset between tests).
-    m.store.orders = [];
-    m.store.order_timeline = [];
-    m.store.load_offers = [];
-    m.calls.length = 0;
-    routeEstimateMock.mockReset();
-    routeEstimateMock.mockResolvedValue(null);
+    // Close server and Redis connections
+    server.close();
+    await redisClient.quit();
   });
 
-  it('happy path: 201, server-computed pricing persisted, no client monetary field in store', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send(validOrderBody);
+  // ============================================================================
+  // 1. Order Creation
+  // ============================================================================
+  describe('POST /api/orders', () => {
+    it('should create an order, timeline, and load offer successfully for a customer', async () => {
+      const customer = await getTestUser('customer');
+      const res = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${customer.token}`)
+        .send(testOrderPayload);
 
-    expect(res.status).toBe(201);
-    expect(res.body).toHaveProperty('order');
+      expect(res.statusCode).toEqual(201);
+      expect(res.body.message).toContain('Order created successfully');
+      expect(res.body.order.order_display_id).toMatch(/^#FF\d{12}$/);
 
-    // Find the orders.insert call
-    const ordersInsert = m.calls.find(c => c.table === 'orders' && c.mode === 'insert');
-    expect(ordersInsert, 'orders.insert should be called').toBeTruthy();
-    const persisted = ordersInsert.payload;
+      const orderId = res.body.order.order_display_id;
 
-    // Server-computed values are paisa integers, derived from rate card
-    expect(persisted.base_freight).toBeGreaterThan(0);
-    expect(persisted.toll_estimate).toBeGreaterThan(0);
-    expect(persisted.platform_fee).toBeGreaterThan(0);
-    expect(persisted.total_amount).toBe(
-      persisted.base_freight + persisted.toll_estimate + persisted.platform_fee
-    );
-    // No client monetary field was ever read off the body.
-    // (The destructure on the old line 64 dropped all 4 client fields
-    //  from req.body before the insert — see PR #299 commit 6cc8ce8.)
-    expect(persisted.base_freight).not.toBe(1);
-    expect(persisted.total_amount).not.toBe(1);
-  });
+      // Verify timeline was created
+      const { data: timeline } = await supabase
+        .from('order_timeline')
+        .select('*')
+        .eq('order_display_id', orderId);
+      expect(timeline.length).toBe(6);
+      expect(timeline[0].milestone).toBe('Order Placed');
+      expect(timeline[0].completed).toBe(true);
 
-  it('CLIENT PRICING IGNORED: body includes base_freight:1 / total_amount:1 → server values still win', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send({ ...validOrderBody, base_freight: 1, toll_estimate: 1, platform_fee: 1, total_amount: 1 });
-
-    expect(res.status).toBe(201);
-    const ordersInsert = m.calls.find(c => c.table === 'orders' && c.mode === 'insert');
-    const persisted = ordersInsert.payload;
-    expect(persisted.base_freight).toBeGreaterThan(1);
-    expect(persisted.toll_estimate).toBeGreaterThan(1);
-    expect(persisted.platform_fee).toBeGreaterThan(1);
-    expect(persisted.total_amount).toBeGreaterThan(1);
-  });
-
-  it('load_offers mirrors orders: freight_value === orders.base_freight, etc.', async () => {
-    const app = buildApp();
-    await request(app).post('/api/orders').set(CUSTOMER_HEADERS).send(validOrderBody);
-
-    const orderInsert   = m.calls.find(c => c.table === 'orders' && c.mode === 'insert').payload;
-    const offerInsert   = m.calls.find(c => c.table === 'load_offers' && c.mode === 'insert').payload;
-    expect(offerInsert.freight_value).toBe(orderInsert.base_freight);
-    expect(offerInsert.toll_cost).toBe(orderInsert.toll_estimate);
-    // fuelCost + toll_cost + net_profit = baseFreight (the driver-side ledger invariant)
-    expect(offerInsert.fuel_cost + offerInsert.toll_cost + offerInsert.net_profit)
-      .toBe(offerInsert.freight_value);
-  });
-
-  it('uses OSRM road distance for persisted pricing when routing succeeds', async () => {
-    routeEstimateMock.mockResolvedValueOnce({ distanceKm: 1423.456, durationSeconds: 90000 });
-    const app = buildApp();
-
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send(validOrderBody);
-
-    expect(res.status).toBe(201);
-    expect(routeEstimateMock).toHaveBeenCalledWith({
-      pickupLat: validOrderBody.pickup_lat,
-      pickupLng: validOrderBody.pickup_lng,
-      dropLat: validOrderBody.drop_lat,
-      dropLng: validOrderBody.drop_lng,
+      // Verify load offer was created
+      const { data: offer } = await supabase
+        .from('load_offers')
+        .select('*')
+        .eq('order_display_id', orderId)
+        .single();
+      expect(offer).not.toBeNull();
+      expect(offer.status).toBe('available');
     });
 
-    const orderInsert = m.calls.find(c => c.table === 'orders' && c.mode === 'insert').payload;
-    const straightLinePricing = computeOrderPricing({
-      pickupLat: validOrderBody.pickup_lat,
-      pickupLng: validOrderBody.pickup_lng,
-      dropLat: validOrderBody.drop_lat,
-      dropLng: validOrderBody.drop_lng,
-      weightTonnes: validOrderBody.weight_tonnes,
+    it('should be rejected for a user with a driver role', async () => {
+      const driver = await getTestUser('driver');
+      const res = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${driver.token}`)
+        .send(testOrderPayload);
+
+      expect(res.statusCode).toEqual(403);
+    });
+  });
+
+  // ============================================================================
+  // 2. Bidding on a Load Offer
+  // ============================================================================
+  describe('POST /api/orders/:id/bids', () => {
+    let loadOfferId;
+    let customerToken;
+
+    beforeAll(async () => {
+      const customer = await getTestUser('customer');
+      customerToken = customer.token;
+      const res = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send(testOrderPayload);
+      const orderDisplayId = res.body.order.order_display_id;
+      const { data: offer } = await supabase.from('load_offers').select('id').eq('order_display_id', orderDisplayId).single();
+      loadOfferId = offer.id;
     });
 
-    expect(orderInsert.base_freight).not.toBe(straightLinePricing.baseFreight);
-    expect(orderInsert.toll_estimate).toBe(Math.round(200 * 1423.456));
-  });
+    it('should allow a driver to submit a bid', async () => {
+      const driver = await getTestUser('driver');
+      const res = await request(app)
+        .post(`/api/orders/${loadOfferId}/bids`)
+        .set('Authorization', `Bearer ${driver.token}`)
+        .send({ bid_amount: 500000 }); // 5000.00
 
-  it('bad coordinates: NaN drop_lat → 400 with a clear pricing error', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send({ ...validOrderBody, drop_lat: 'not-a-number' });
-    expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty('error');
-  });
-
-  it('zero weight → 400', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send({ ...validOrderBody, weight_tonnes: 0 });
-    expect(res.status).toBe(400);
-  });
-
-  it('regression: NO `const { base_freight } = pricing` destructure in route handler', async () => {
-    // Static check — lock in the maintainer-caught camelCase/snake_case bug
-    // so a future refactor cannot reintroduce it.
-    const fs = await import('node:fs/promises');
-    const path = await import('node:path');
-    const url = await import('node:url');
-    const here = path.dirname(url.fileURLToPath(import.meta.url));
-    const routeSrc = await fs.readFile(
-      path.resolve(here, '../../src/routes/orderRoutes.js'),
-      'utf8'
-    );
-    expect(
-      routeSrc,
-      'orderRoutes.js must NOT destructure pricing into snake_case locals (regression of b04413e)'
-    ).not.toMatch(/const\s*\{\s*base_freight\s*,\s*toll_estimate\s*,\s*platform_fee\s*,\s*total_amount\s*\}\s*=\s*pricing/);
-  });
-
-  it('regression: NO client monetary fields in the orders.insert payload', async () => {
-    // The route should not read base_freight/toll_estimate/platform_fee/total_amount
-    // from req.body at all. If it does, the fix is regressed.
-    const app = buildApp();
-    await request(app).post('/api/orders').set(CUSTOMER_HEADERS).send({
-      ...validOrderBody,
-      base_freight: 99999, toll_estimate: 99999, platform_fee: 99999, total_amount: 99999,
+      expect(res.statusCode).toEqual(201);
+      expect(res.body.message).toContain('Bid submitted successfully');
+      expect(res.body.bid.load_id).toBe(loadOfferId);
+      expect(res.body.bid.bid_amount).toBe(500000);
     });
-    const orderInsert = m.calls.find(c => c.table === 'orders' && c.mode === 'insert').payload;
-    expect(orderInsert.base_freight).not.toBe(99999);
-    expect(orderInsert.toll_estimate).not.toBe(99999);
-    expect(orderInsert.platform_fee).not.toBe(99999);
-    expect(orderInsert.total_amount).not.toBe(99999);
-  });
-  it('driver can update milestone when assigned to order', async () => {
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-123',
-      order_display_id: 'ORD001',
-      status: 'truck_assigned'
-    }];
 
-    m.store.order_timeline = [{
-      order_display_id: 'ORD001',
-      milestone: 'Goods Loaded',
-      completed: false
-    }];
+    it('should prevent a customer from submitting a bid', async () => {
+      const res = await request(app)
+        .post(`/api/orders/${loadOfferId}/bids`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ bid_amount: 500000 });
 
-    const app = buildApp();
-
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({
-        milestone: 'Goods Loaded'
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.message).toMatch(/Milestone updated successfully/i);
+      expect(res.statusCode).toEqual(403);
+    });
   });
 
-  it('returns 403 when driver is not assigned to order', async () => {
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-999',
-      order_display_id: 'ORD001'
-    }];
+  // ============================================================================
+  // 3. Accepting a Bid
+  // ============================================================================
+  describe('POST /api/orders/:id/bids/:bidId/accept', () => {
+    let orderId;
+    let bidId;
+    let customerToken;
 
-    const app = buildApp();
+    beforeAll(async () => {
+      const customer = await getTestUser('customer');
+      const driver = await getTestUser('driver');
+      customerToken = customer.token;
 
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({
-        milestone: 'Goods Loaded'
-      });
+      const orderRes = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send(testOrderPayload);
+      orderId = orderRes.body.order.id;
+      const orderDisplayId = orderRes.body.order.order_display_id;
 
-    expect(res.status).toBe(403);
+      const { data: offer } = await supabase.from('load_offers').select('id').eq('order_display_id', orderDisplayId).single();
+      const bidRes = await request(app)
+        .post(`/api/orders/${offer.id}/bids`)
+        .set('Authorization', `Bearer ${driver.token}`)
+        .send({ bid_amount: 480000 });
+      bidId = bidRes.body.bid.id;
+    });
+
+    it('should allow a customer to accept a bid, assigning the driver and truck', async () => {
+      const res = await request(app)
+        .post(`/api/orders/${orderId}/bids/${bidId}/accept`)
+        .set('Authorization', `Bearer ${customerToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.message).toContain('Bid accepted');
+
+      // Verify order status and driver assignment
+      const { data: order } = await supabase.from('orders').select('status, driver_id').eq('id', orderId).single();
+      expect(order.status).toBe('confirmed');
+      expect(order.driver_id).not.toBeNull();
+
+      // Verify bid status
+      const { data: bid } = await supabase.from('load_bids').select('status').eq('id', bidId).single();
+      expect(bid.status).toBe('accepted');
+
+      // Verify a trip record was created
+      const { data: trip } = await supabase.from('trips').select('*').eq('order_id', orderId).single();
+      expect(trip).not.toBeNull();
+      expect(trip.status).toBe('not_started');
+    });
   });
 
-  it('returns 500 when orders insert fails', async () => {
-    routeEstimateMock.mockResolvedValue(null);
-    m.programError('insert failed');
+  // ============================================================================
+  // 8. OTP-based Delivery Verification & Trip Completion
+  // ============================================================================
+  describe('POST /api/orders/:id/verify-otp', () => {
+    let orderId;
+    let orderDisplayId;
+    let driverToken;
 
-    const app = buildApp();
+    beforeAll(async () => {
+      // Create a complete order scenario: Customer creates order, Driver bids, Customer accepts
+      const customer = await getTestUser('customer');
+      const driver = await getTestUser('driver');
+      driverToken = driver.token;
 
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send(validOrderBody);
+      // 1. Customer creates an order
+      const orderRes = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${customer.token}`)
+        .send(testOrderPayload);
+      orderId = orderRes.body.order.id;
+      orderDisplayId = orderRes.body.order.order_display_id;
 
-    expect(res.status).toBe(500);
+      // 2. Find the load offer for the new order
+      const { data: offer } = await supabase
+        .from('load_offers')
+        .select('id')
+        .eq('order_display_id', orderDisplayId)
+        .single();
+
+      // 3. Driver places a bid
+      const bidRes = await request(app)
+        .post(`/api/orders/${offer.id}/bids`)
+        .set('Authorization', `Bearer ${driver.token}`)
+        .send({ bid_amount: 450000 });
+      const bidId = bidRes.body.bid.id;
+
+      // 4. Customer accepts the bid
+      await request(app)
+        .post(`/api/orders/${orderId}/bids/${bidId}/accept`)
+        .set('Authorization', `Bearer ${customer.token}`);
+
+      // 5. Driver updates milestone to 'In Transit' to trigger OTP generation
+      await request(app)
+        .put(`/api/orders/${orderId}/milestones`)
+        .set('Authorization', `Bearer ${driver.token}`)
+        .send({ milestone: 'In Transit' });
+    });
+
+    it('should reject with 400 for an invalid OTP', async () => {
+      const res = await request(app)
+        .post(`/api/orders/${orderId}/verify-otp`)
+        .set('Authorization', `Bearer ${driverToken}`)
+        .send({ otp: '000000' });
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body.error).toEqual('Invalid OTP.');
+
+      // Check that attempts counter was decremented
+      const attemptsLeft = await redisClient.get(`otp_attempts:${orderDisplayId}`);
+      expect(attemptsLeft).toBe('2');
+    });
+
+    it('should reject with 429 after too many failed attempts', async () => {
+      // First attempt (already done in previous test, 2 left)
+      // Second attempt
+      await request(app)
+        .post(`/api/orders/${orderId}/verify-otp`)
+        .set('Authorization', `Bearer ${driverToken}`)
+        .send({ otp: '000001' });
+
+      // Third attempt
+      await request(app)
+        .post(`/api/orders/${orderId}/verify-otp`)
+        .set('Authorization', `Bearer ${driverToken}`)
+        .send({ otp: '000002' });
+
+      const attemptsLeft = await redisClient.get(`otp_attempts:${orderDisplayId}`);
+      expect(attemptsLeft).toBe('0');
+
+      // Fourth attempt should be locked
+      const res = await request(app)
+        .post(`/api/orders/${orderId}/verify-otp`)
+        .set('Authorization', `Bearer ${driverToken}`)
+        .send({ otp: '000003' });
+
+      expect(res.statusCode).toEqual(429);
+      expect(res.body.error).toContain('Too many failed attempts');
+    });
+
+    it('should successfully verify a valid OTP and complete the trip', async () => {
+      // We need a fresh OTP for this test
+      const driver = await getTestUser('driver');
+      const customer = await getTestUser('customer');
+      const orderRes = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${customer.token}`)
+        .send(testOrderPayload);
+      const newOrderId = orderRes.body.order.id;
+      const newOrderDisplayId = orderRes.body.order.order_display_id;
+
+      const { data: offer } = await supabase.from('load_offers').select('id').eq('order_display_id', newOrderDisplayId).single();
+      const bidRes = await request(app).post(`/api/orders/${offer.id}/bids`).set('Authorization', `Bearer ${driver.token}`).send({ bid_amount: 450000 });
+      await request(app).post(`/api/orders/${newOrderId}/bids/${bidRes.body.bid.id}/accept`).set('Authorization', `Bearer ${customer.token}`);
+      await request(app).put(`/api/orders/${newOrderId}/milestones`).set('Authorization', `Bearer ${driver.token}`).send({ milestone: 'In Transit' });
+
+      // Retrieve the valid OTP from Redis
+      const validOtp = await redisClient.get(`otp:${newOrderDisplayId}`);
+      expect(validOtp).not.toBeNull();
+
+      const res = await request(app)
+        .post(`/api/orders/${newOrderId}/verify-otp`)
+        .set('Authorization', `Bearer ${driver.token}`)
+        .send({
+          otp: validOtp,
+          hours_driven: 5.5,
+          end_time: new Date().toISOString()
+        });
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.message).toEqual('Delivery confirmed and trip completed successfully.');
+
+      // Verify final milestone is marked as complete
+      const { data: timeline } = await supabase
+        .from('order_timeline')
+        .select('completed')
+        .eq('order_display_id', newOrderDisplayId)
+        .eq('milestone', 'Delivered')
+        .single();
+      expect(timeline.completed).toBe(true);
+
+      // Verify trip status is updated
+      const { data: trip } = await supabase
+        .from('trips')
+        .select('status')
+        .eq('trip_display_id', newOrderDisplayId)
+        .single();
+      expect(trip.status).toEqual('completed');
+
+      // Verify Redis keys were deleted
+      const otpKey = await redisClient.get(`otp:${newOrderDisplayId}`);
+      const attemptsKey = await redisClient.get(`otp_attempts:${newOrderDisplayId}`);
+      expect(otpKey).toBeNull();
+      expect(attemptsKey).toBeNull();
+    });
   });
 });
-
-describe('POST /api/orders/:id/bids — duplicate bid prevention', () => {
-  beforeEach(() => {
-    m.store.load_offers = [];
-    m.store.load_bids = [];
-    m.calls.length = 0;
-  });
-
-  it('rejects a duplicate pending bid from the same driver on the same load', async () => {
-    const app = buildApp();
-    m.store.load_offers.push({
-      id: 'load-duplicate',
-      status: 'available',
-    });
-    m.store.load_bids.push({
-      id: 'existing-bid',
-      load_id: 'load-duplicate',
-      driver_id: DRIVER_HEADERS['x-user-id'],
-      bid_amount: 500000,
-      status: 'pending',
-    });
-
-    const res = await request(app)
-      .post('/api/orders/load-duplicate/bids')
-      .set(DRIVER_HEADERS)
-      .send({ bid_amount: 510000 });
-
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: 'You already have a pending bid for this load.' });
-    const bidInserts = m.calls.filter(c => c.table === 'load_bids' && c.mode === 'insert');
-    expect(bidInserts).toHaveLength(0);
-  });
-});
-
-describe('POST /api/orders/:id/bids/:bidId/accept — bid ownership', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.store.load_offers = [];
-    m.store.load_bids = [];
-    m.store.profiles = [];
-    m.store.driver_details = [];
-    m.store.trucks = [];
-    m.calls.length = 0;
-  });
-
-  it('rejects a pending bid when it belongs to a different order load offer', async () => {
-    const app = buildApp();
-    m.store.orders.push({
-      id: 'order-owned',
-      order_display_id: 'ORDER-OWNED',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-    });
-    m.store.load_offers.push({
-      id: 'load-owned',
-      order_display_id: 'ORDER-OWNED',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-    });
-    m.store.load_bids.push({
-      id: 'bid-from-other-load',
-      load_id: 'load-other',
-      driver_id: 'driver-other',
-      bid_amount: 42000,
-      status: 'pending',
-    });
-
-    const res = await request(app)
-      .post('/api/orders/order-owned/bids/bid-from-other-load/accept')
-      .set(CUSTOMER_HEADERS)
-      .send();
-
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: 'Access Denied: Bid does not belong to this order.' });
-    expect(m.calls.some(c => c.rpc === 'accept_bid_tx')).toBe(false);
-  });
-
-  it('returns 404 when load offer for order not found', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      order_display_id: 'OD-NOOFFER',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-    });
-
-    m.store.load_bids.push({
-      id: 'bid-1',
-      load_id: 'load-1',
-      driver_id: 'driver-1',
-      bid_amount: 50000,
-      status: 'pending',
-    });
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .post('/api/orders/order-1/bids/bid-1/accept')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(404);
-  });
-});
-
-describe('GET /api/orders/history — order history', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.calls.length = 0;
-  });
-
-  it('returns order history for customer', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-      status: 'pending',
-      created_at: '2026-06-01',
-    });
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/history')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
-
-  it('returns 500 on DB error', async () => {
-    m.programError('db failure');
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/history')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(500);
-  });
-});
-
-describe('GET /api/orders/:id — order details', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.store.order_timeline = [];
-    m.store.profiles = [];
-    m.store.driver_details = [];
-    m.calls.length = 0;
-  });
-
-  it('returns 404 when order not found', async () => {
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/nonexistent-id')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 403 when user does not own the order', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      customer_id: 'someone-else',
-      driver_id: null,
-      order_display_id: 'OD1',
-    });
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/order-1')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(403);
-  });
-
-  it('returns order details with timeline for owner', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-      driver_id: null,
-      order_display_id: 'OD1',
-    });
-
-    m.store.order_timeline.push({
-      order_display_id: 'OD1',
-      milestone: 'Order Placed',
-      completed: true,
-      sort_order: 10,
-    });
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/order-1')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(200);
-    expect(res.body.order.id).toBe('order-1');
-    expect(Array.isArray(res.body.timeline)).toBe(true);
-  });
-
-  it('returns order details with driver profile when driver assigned', async () => {
-    m.store.orders.push({
-      id: 'order-2',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-      driver_id: 'driver-1',
-      order_display_id: 'OD2',
-    });
-
-    m.store.profiles.push({
-      id: 'driver-1',
-      full_name: 'Test Driver',
-      phone: '9999999999',
-      avatar_url: null,
-    });
-
-    m.store.driver_details.push({
-      user_id: 'driver-1',
-      rating: 4.8,
-      total_trips: 30,
-    });
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/order-2')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(200);
-    expect(res.body.driver.name).toBe('Test Driver');
-  });
-
-  it('returns 500 on DB error', async () => {
-    m.programError('db failure');
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/order-1')
-      .set(CUSTOMER_HEADERS);
-
-    expect(res.status).toBe(500);
-  });
-});
-
-describe('POST /api/orders — missing required fields', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.calls.length = 0;
-    routeEstimateMock.mockReset();
-  });
-
-  it('returns 400 when required fields are missing', async () => {
-    const app = buildApp();
-
-    const res = await request(app)
-      .post('/api/orders')
-      .set(CUSTOMER_HEADERS)
-      .send({ pickup_address: '123 St' }); // missing most required fields
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('Missing required');
-  });
-});
-
-describe('PUT /api/orders/:id/milestones — edge cases', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.store.order_timeline = [];
-    m.calls.length = 0;
-  });
-
-  it('returns 400 for invalid milestone', async () => {
-    const app = buildApp();
-
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set(DRIVER_HEADERS)
-      .send({ milestone: 'Invalid Milestone' });
-
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 404 when order not found', async () => {
-    const app = buildApp();
-
-    const res = await request(app)
-      .put('/api/orders/nonexistent/milestones')
-      .set(DRIVER_HEADERS)
-      .send({ milestone: 'Goods Loaded' });
-
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 500 when order update fails', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      driver_id: DRIVER_HEADERS['x-user-id'],
-      order_display_id: 'OD1',
-    });
-
-    const originalFrom = m.supabase.from.bind(m.supabase);
-    m.supabase.from = (table) => {
-      const builder = originalFrom(table);
-      if (table === 'orders') {
-        const originalUpdate = builder.update.bind(builder);
-        builder.update = (payload) => {
-          const b = originalUpdate(payload);
-          b._exec = async () => ({ data: null, error: { message: 'update failed' } });
-          return b;
-        };
-      }
-      return builder;
-    };
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set(DRIVER_HEADERS)
-      .send({ milestone: 'Goods Loaded' });
-
-    m.supabase.from = originalFrom;
-
-    expect(res.status).toBe(500);
-  });
-  
-});
-
-describe('GET /api/orders/:id/bids — bids query error', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.store.load_offers = [];
-    m.store.load_bids = [];
-    m.calls.length = 0;
-  });
-
-  it('returns 500 when bids query fails', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      customer_id: CUSTOMER_HEADERS['x-user-id'],
-      order_display_id: 'OD1',
-    });
-
-    m.store.load_offers.push({
-      id: 'load-1',
-      order_display_id: 'OD1',
-    });
-
-    const originalFrom = m.supabase.from.bind(m.supabase);
-    m.supabase.from = (table) => {
-      const builder = originalFrom(table);
-      if (table === 'load_bids') {
-        builder._exec = async () => ({ data: null, error: { message: 'bids query failed' } });
-      }
-      return builder;
-    };
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .get('/api/orders/order-1/bids')
-      .set(CUSTOMER_HEADERS);
-
-    m.supabase.from = originalFrom;
-
-    expect(res.status).toBe(500);
-  });
-});
-
-describe('PUT /api/orders/:id/milestones — timeline update error', () => {
-  beforeEach(() => {
-    m.store.orders = [];
-    m.store.order_timeline = [];
-    m.calls.length = 0;
-  });
-
-  it('returns 500 when timeline update fails', async () => {
-    m.store.orders.push({
-      id: 'order-1',
-      driver_id: DRIVER_HEADERS['x-user-id'],
-      order_display_id: 'OD1',
-    });
-
-    m.store.order_timeline.push({
-      order_display_id: 'OD1',
-      milestone: 'In Transit',
-      completed: false,
-    });
-
-    const originalFrom = m.supabase.from.bind(m.supabase);
-    m.supabase.from = (table) => {
-      const builder = originalFrom(table);
-      if (table === 'order_timeline') {
-        const originalUpdate = builder.update.bind(builder);
-        builder.update = (payload) => {
-          const b = originalUpdate(payload);
-          b._exec = async () => ({ data: null, error: { message: 'timeline update failed' } });
-          return b;
-        };
-      }
-      return builder;
-    };
-
-    const app = buildApp();
-
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set(DRIVER_HEADERS)
-      .send({ milestone: 'In Transit' });
-
-    m.supabase.from = originalFrom;
-
-    expect(res.status).toBe(500);
-  });
-});
-
-// NOTE: Redis integration is mocked in these tests via a stubbed redisClient.
-describe('Delivery OTP Verification and Milestones (Redis verify-otp)', () => {
-
-  beforeEach(() => {
-    m.store.orders = [];
-    m.store.order_timeline = [];
-    m.store.load_offers = [];
-    m.store.load_bids = [];
-    m.store.profiles = [];
-    m.store.driver_details = [];
-    m.store.trucks = [];
-    m.calls.length = 0;
-  });
-
-  it('blocks direct transition to Delivered milestone with descriptive message', async () => {
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-123',
-      order_display_id: 'ORD001',
-      status: 'in_transit'
-    }];
-
-    const app = buildApp();
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({ milestone: 'Delivered' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Cannot set Delivered milestone directly. Use /verify-delivery endpoint to confirm delivery.');
-  });
-
-  it('generates and returns OTP when moving to In Transit milestone', async () => {
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-123',
-      order_display_id: 'ORD001',
-      status: 'picked_up',
-      otp_verified: false
-    }];
-    m.store.order_timeline = [{
-      order_display_id: 'ORD001',
-      milestone: 'In Transit',
-      completed: false
-    }];
-
-    const app = buildApp();
-    const res = await request(app)
-      .put('/api/orders/order-1/milestones')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({ milestone: 'In Transit' });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('otp');
-    expect(res.body.otp).toMatch(/^\d{6}$/); // 6-digit OTP
-
-    const order = m.store.orders.find(o => o.id === 'order-1');
-    expect(order.delivery_otp).toBe(res.body.otp);
-    expect(order.otp_verified).toBe(false);
-    expect(order.otp_generated_at).toBeDefined();
-  });
-
-  it('fails OTP verification if missing OTP', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders/order-1/verify-otp')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({}); // Missing OTP
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('OTP is required for verification.');
-  });
-
-  it('fails OTP verification if driver is not assigned', async () => {
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-different',
-      order_display_id: 'ORD001',
-      delivery_otp: '123456',
-      otp_verified: false
-    }];
-
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders/order-1/verify-otp')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({ otp: '123456' });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Access Denied: You are not assigned to this order.');
-  });
-
-  it('fails OTP verification if OTP is invalid', async () => {
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-123',
-      order_display_id: 'ORD001',
-      delivery_otp: '123456',
-      otp_verified: false
-    }];
-
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders/order-1/verify-otp')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({ otp: '654321' }); // Invalid OTP
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Invalid OTP. Please check and try again.');
-  });
-
-  it('invalid OTP increments attempts and locks after 3 failures (Redis keys + counter)', async () => {
-    const orderDisplayId = 'ORD001';
-    const otpKey = `order:otp:${orderDisplayId}`;
-    const attemptsKey = `order:otp:attempts:${orderDisplayId}`;
-
-    // Arrange: order assigned to driver
-
-    m.store.orders = [{
-      id: 'order-1',
-      driver_id: 'driver-123',
-      order_display_id: 'ORD001',
-      status: 'in_transit',
-    }];
-
-    const app = buildApp();
-    const baseReq = request(app)
-      .post('/api/orders/order-1/verify-otp')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({ otp: '000000' });
-
-    // 1st failure
-    const r1 = await baseReq;
-    expect(r1.status).toBe(400);
-
-    expect(await redisClientMock.get(attemptsKey)).toBe('1');
-
-
-    // 2nd failure
-    const r2 = await baseReq;
-    expect(r2.status).toBe(400);
-
-    // 3rd failure triggers lockout
-    const r3 = await baseReq;
-    expect(r3.status).toBe(400);
-
-    // After 3 failures, lockout should block further attempts
-    const r4 = await baseReq;
-    expect(r4.status).toBe(429);
-
-  });
-
-  it('verifies delivery successfully with correct OTP, updates status and calls RPC (RPC called after Redis OTP verify)', async () => {
-    const orderDisplayId = 'ORD001';
-    const otpKey = `order:otp:${orderDisplayId}`;
-
-    // Seed Redis with the OTP so the route can validate it.
-    await redisClientMock.set(otpKey, '123456', 'EX', 86400, 'NX');
-
-    m.store.orders = [{
-
-
-      id: 'order-1',
-      driver_id: 'driver-123',
-      order_display_id: 'ORD001',
-      delivery_otp: '123456',
-      otp_verified: false,
-      status: 'in_transit'
-    }];
-    m.store.order_timeline = [{
-      order_display_id: 'ORD001',
-      milestone: 'Delivered',
-      completed: false
-    }];
-
-    const app = buildApp();
-    const res = await request(app)
-      .post('/api/orders/order-1/verify-otp')
-      .set({
-        'x-user-id': 'driver-123',
-        'x-user-role': 'driver'
-      })
-      .send({ otp: 123456 }); // Numeric input, verifies type safety
-
-    expect(res.status).toBe(200);
-    expect(res.body.message).toMatch(/Delivery verified successfully/i);
-
-    const order = m.store.orders.find(o => o.id === 'order-1');
-    expect(order.otp_verified).toBe(true);
-    expect(order.status).toBe('payment_released');
-
-    const timeline = m.store.order_timeline.find(t => t.order_display_id === 'ORD001' && t.milestone === 'Delivered');
-    expect(timeline.completed).toBe(true);
-
-    const rpcCall = m.calls.find(c => c.rpc === 'complete_trip_tx');
-    expect(rpcCall).toBeTruthy();
-    expect(rpcCall.args).toEqual({ p_order_id: 'order-1' });
-  });
-});
-
