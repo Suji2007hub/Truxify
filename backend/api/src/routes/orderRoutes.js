@@ -6,20 +6,18 @@ import { getRouteEstimate } from '../services/osrm.js';
 
 const router = express.Router();
 
-/**
- * Helper to generate order display IDs like #FF20260521
- */
 function generateOrderDisplayId() {
   const prefix = '#FF';
   const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-  const random = Math.floor(1000 + Math.random() * 9000); // 4 random digits
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const random = Math.floor(1000 + Math.random() * 9000);
   return `${prefix}${dateStr}${random}`;
 }
 
-// ============================================================================
-// 1. CREATE AN ORDER (CUSTOMER)
-// ============================================================================
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 router.post('/', authenticate, requireRole(['customer']), async (req, res) => {
   const {
     pickup_address, pickup_lat, pickup_lng,
@@ -30,19 +28,10 @@ router.post('/', authenticate, requireRole(['customer']), async (req, res) => {
     payment_method_id, upi_id
   } = req.body;
 
-  // Basic validations
   if (!pickup_address || !pickup_lat || !pickup_lng || !drop_address || !drop_lat || !drop_lng || !goods_type || !weight_tonnes) {
     return res.status(400).json({ error: 'Missing required routing or cargo specification fields.' });
   }
 
-  // ============================================================================
-  // Server-side pricing (single source of truth).
-  // Client-supplied monetary fields are no longer accepted; pricing is derived
-  // from route geometry, cargo weight, and the goods-class multipliers. See
-  // ../lib/pricing.js for the rate card (env-overridable) and the full
-  // derivation. If the customer passed monetary fields anyway we silently
-  // drop them — the server's number is the only number that gets persisted.
-  // ============================================================================
   let pricing;
   try {
     const routeEstimate = await getRouteEstimate({
@@ -72,7 +61,6 @@ router.post('/', authenticate, requireRole(['customer']), async (req, res) => {
   const orderDisplayId = generateOrderDisplayId();
 
   try {
-    // Step 1: Insert into orders table
     const { data: order, error: orderErr } = await supabase
       .from('orders')
       .insert({
@@ -98,7 +86,6 @@ router.post('/', authenticate, requireRole(['customer']), async (req, res) => {
       return res.status(500).json({ error: 'Failed to create order record.', details: orderErr.message });
     }
 
-    // Step 2: Initialize Timeline Milestones
     const milestones = [
       { order_display_id: orderDisplayId, milestone: 'Order Placed', milestone_time: new Date().toISOString(), completed: true, sort_order: 10 },
       { order_display_id: orderDisplayId, milestone: 'Truck Assigned', milestone_time: null, completed: false, sort_order: 20 },
@@ -114,12 +101,8 @@ router.post('/', authenticate, requireRole(['customer']), async (req, res) => {
 
     if (timelineErr) {
       console.error('Timeline Insertion Error:', timelineErr.message);
-      // We don't fail the whole request since order is created, but log it
     }
 
-    // Step 3: Automatically expose this order as a "load_offer" for drivers.
-    // Freight value, fuel cost, toll cost, and net profit all come from the
-    // server-computed `pricing` object — never from the request body.
     const { error: offerErr } = await supabase
       .from('load_offers')
       .insert({
@@ -154,9 +137,6 @@ router.post('/', authenticate, requireRole(['customer']), async (req, res) => {
   }
 });
 
-// ============================================================================
-// 2. FETCH ORDER HISTORY (CUSTOMER)
-// ============================================================================
 router.get('/history', authenticate, requireRole(['customer']), async (req, res) => {
   try {
     const { data: history, error } = await supabase
@@ -175,14 +155,10 @@ router.get('/history', authenticate, requireRole(['customer']), async (req, res)
   }
 });
 
-// ============================================================================
-// 3. FETCH SPECIFIC ORDER DETAILS AND TIMELINE (CUSTOMER OR DRIVER)
-// ============================================================================
 router.get('/:id', authenticate, async (req, res) => {
   const orderId = req.params.id;
 
   try {
-    // 3.1 Fetch Order detail
     const { data: order, error: orderErr } = await supabase
       .from('orders')
       .select('*')
@@ -197,19 +173,16 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Order not found.' });
     }
 
-    // Security check: Make sure user owns this order or is the assigned driver
     if (order.customer_id !== req.user.id && order.driver_id !== req.user.id) {
       return res.status(403).json({ error: 'Access Denied: You do not own this order.' });
     }
 
-    // 3.2 Fetch timeline
     const { data: timeline, error: timelineErr } = await supabase
       .from('order_timeline')
       .select('milestone, milestone_time, completed, sort_order')
       .eq('order_display_id', order.order_display_id)
       .order('sort_order', { ascending: true });
 
-    // 3.3 Fetch driver details if assigned (Logical application join)
     let driverProfile = null;
     if (order.driver_id) {
       const { data: profile } = await supabase
@@ -246,19 +219,15 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// ============================================================================
-// 4. SUBMIT BID FOR LOAD OFFER (DRIVER)
-// ============================================================================
 router.post('/:id/bids', authenticate, requireRole(['driver']), async (req, res) => {
-  const loadOfferId = req.params.id; // load_offers.id
-  const { bid_amount } = req.body; // in paisa
+  const loadOfferId = req.params.id;
+  const { bid_amount } = req.body;
 
   if (!bid_amount || bid_amount <= 0) {
     return res.status(400).json({ error: 'Invalid bid amount.' });
   }
 
   try {
-    // Check if the load exists and is still available
     const { data: offer, error: offerErr } = await supabase
       .from('load_offers')
       .select('id, status')
@@ -292,7 +261,6 @@ router.post('/:id/bids', authenticate, requireRole(['driver']), async (req, res)
       return res.status(409).json({ error: 'You already have a pending bid for this load.' });
     }
 
-    // Submit bid
     const { data: bid, error: bidErr } = await supabase
       .from('load_bids')
       .insert({
@@ -318,14 +286,10 @@ router.post('/:id/bids', authenticate, requireRole(['driver']), async (req, res)
   }
 });
 
-// ============================================================================
-// 5. VIEW BIDS FOR AN ORDER (CUSTOMER)
-// ============================================================================
 router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res) => {
   const orderId = req.params.id;
 
   try {
-    // Find matching load offer display id from the order
     const { data: order } = await supabase
       .from('orders')
       .select('order_display_id, customer_id')
@@ -336,7 +300,6 @@ router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res
       return res.status(403).json({ error: 'Access Denied: You do not own this order.' });
     }
 
-    // Find the load offer
     const { data: offer } = await supabase
       .from('load_offers')
       .select('id')
@@ -344,10 +307,9 @@ router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res
       .maybeSingle();
 
     if (!offer) {
-      return res.json([]); // No load offer created yet
+      return res.json([]);
     }
 
-    // Fetch active bids and join driver profiles at app layer (independent tables join)
     const { data: bids, error: bidErr } = await supabase
       .from('load_bids')
       .select('*')
@@ -363,8 +325,6 @@ router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res
       return res.json([]);
     }
 
-    // Populate profile and truck data
-    // Batch fetch all driver IDs at once
     const driverIds = bids.map(b => b.driver_id);
 
     const [profilesRes, detailsRes] = await Promise.all([
@@ -381,7 +341,6 @@ router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res
     const profiles = profilesRes.data || [];
     const details  = detailsRes.data || [];
 
-    // Batch fetch all trucks
     const truckIds = details
       .map(d => d.truck_id)
       .filter(Boolean);
@@ -395,7 +354,6 @@ router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res
 
     const trucks = trucksRes.data || [];
 
-    // Map into lookup objects
     const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
     const detailMap  = Object.fromEntries(details.map(d => [d.user_id, d]));
     const truckMap   = Object.fromEntries(trucks.map(t => [t.id, t]));
@@ -429,15 +387,11 @@ router.get('/:id/bids', authenticate, requireRole(['customer']), async (req, res
   }
 });
 
-// ============================================================================
-// 6. ACCEPT BID (CUSTOMER)
-// ============================================================================
 router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), async (req, res) => {
   const orderId = req.params.id;
   const bidId = req.params.bidId;
 
   try {
-    // 6.1 Verify order ownership
     const { data: order } = await supabase
       .from('orders')
       .select('order_display_id, customer_id')
@@ -448,7 +402,6 @@ router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), 
       return res.status(403).json({ error: 'Access Denied: You do not own this order.' });
     }
 
-    // 6.2 Fetch bid details
     const { data: bid } = await supabase
       .from('load_bids')
       .select('*')
@@ -459,7 +412,6 @@ router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), 
       return res.status(404).json({ error: 'Bid is not active or not found.' });
     }
 
-    // 6.3 Verify the bid belongs to this order's load offer
     const { data: loadOffer, error: loadOfferErr } = await supabase
       .from('load_offers')
       .select('id')
@@ -481,7 +433,6 @@ router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), 
       return res.status(403).json({ error: 'Access Denied: Bid does not belong to this order.' });
     }
 
-    // 6.4 Fetch driver details & truck details for denormalized snapshot storage
     const { data: profile } = await supabase
       .from('profiles')
       .select('full_name')
@@ -496,12 +447,6 @@ router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), 
 
     let truckInfo = null;
     if (details && details.truck_id) {
-      // The Supabase `maybeSingle()` builder returns a thenable, but
-      // awaiting the outer promise with `.then(res => res.data)` here
-      // would re-wrap the row in another Promise, leaving `truckInfo` as
-      // a Promise object (whose `id` and `number_plate` properties are
-      // undefined). Use a normal `await` and destructure `data` so the
-      // row is actually unwrapped before the RPC call below.
       const { data, error: truckErr } = await supabase
         .from('trucks')
         .select('id, name, number_plate')
@@ -514,7 +459,6 @@ router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), 
       truckInfo = data;
     }
 
-    // 6.5 Execute atomically via Supabase RPC
     const { error: rpcErr } = await supabase.rpc('accept_bid_tx', {
       p_bid_id:           bidId,
       p_order_id:         orderId,
@@ -542,13 +486,7 @@ router.post('/:id/bids/:bidId/accept', authenticate, requireRole(['customer']), 
   }
 });
 
-// ============================================================================
-// 7. UPDATE ORDER MILESTONE (ASSIGNED DRIVER)
-// ============================================================================
 router.put('/:id/milestones', authenticate, requireRole(['driver']), async (req, res) => {
-  // NOTE: When the order enters the delivery phase, we generate & store
-  // a delivery OTP in Redis. OTP verification is performed via
-  // POST /api/orders/:id/verify-otp (see below).
   const orderId = req.params.id;
   const { milestone } = req.body;
 
@@ -560,7 +498,6 @@ router.put('/:id/milestones', authenticate, requireRole(['driver']), async (req,
     'Arriving': 'arriving',
   };
 
-  // Prevent direct transition to Delivered - must use OTP verification
   if (milestone === 'Delivered') {
     return res.status(400).json({ error: 'Cannot set Delivered milestone directly. Use /verify-delivery endpoint to confirm delivery.' });
   }
@@ -572,7 +509,6 @@ router.put('/:id/milestones', authenticate, requireRole(['driver']), async (req,
   }
 
   try {
-    // 7.1 Fetch order and verify driver is assigned
     const { data: order, error: orderErr } = await supabase
       .from('orders')
       .select('*')
@@ -584,104 +520,52 @@ router.put('/:id/milestones', authenticate, requireRole(['driver']), async (req,
     }
 
     if (order.driver_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access Denied: You are not assigned to this order.' });
+      return res.status(403).json({ error: 'Access Denied: You are not the assigned driver for this order.' });
     }
 
-    const status = milestoneMap[milestone];
-
-    // 7.3 Prepare updates
-    const updates = {
-      status,
-      updated_at: new Date().toISOString()
-    };
-
-    // Generate and store delivery OTP in Redis only when entering In Transit.
-    // Keys:
-    //   order:otp:${orderDisplayId} (TTL 86400)
-    //   order:otp:attempts:${orderDisplayId}
-    const otpTtlSeconds = 86400;
-    let generatedOtp = null;
-
-    if (milestone === 'In Transit') {
-      if (!redisClient) {
-        return res.status(500).json({ error: 'Redis not configured.' });
-      }
-
-      const orderDisplayId = order.order_display_id;
-      const otpKey = `order:otp:${orderDisplayId}`;
-
-      // Dup-safety: if OTP already exists in Redis, reuse it.
-      // Atomic set if not exists prevents concurrent double-minting.
-      const existing = await redisClient.get(otpKey);
-      if (existing) {
-        generatedOtp = existing;
-      } else {
-        generatedOtp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
-        await redisClient.set(otpKey, generatedOtp, 'EX', otpTtlSeconds, 'NX');
-      }
-
-      // Keep DB fields optional, but don't rely on them for verification.
-      updates.otp_generated_at = new Date().toISOString();
-    }
-
-
-    // 7.4 Perform order update
-    const { data: updatedOrder, error: updateErr } = await supabase
-      .from('orders')
-      .update(updates)
-      .eq('id', orderId)
-      .select('*')
-      .single();
-
-    if (updateErr) {
-      return res.status(500).json({ error: 'Failed to update order.', details: updateErr.message });
-    }
-
-    // 7.5 Update order timeline
-    await supabase
+    const { error: timelineErr } = await supabase
       .from('order_timeline')
       .update({ completed: true, milestone_time: new Date().toISOString() })
       .eq('order_display_id', order.order_display_id)
       .eq('milestone', milestone);
 
-    // 7.6 Return response
-    const response = {
-      message: 'Milestone updated successfully.',
-      order: updatedOrder,
-      milestone,
-      status
-    };
-    if (generatedOtp) {
-      // In real app, you would send this OTP to the customer via SMS/email
-      response.otp = generatedOtp;
+    if (timelineErr) {
+      return res.status(500).json({ error: 'Failed to update timeline.', details: timelineErr.message });
     }
 
-    res.json(response);
+    if (milestone === 'In Transit') {
+      const otp = generateOtp();
+      const otpKey = `otp:${order.order_display_id}`;
+      const attemptsKey = `otp_attempts:${order.order_display_id}`;
+
+      try {
+        await redisClient.set(otpKey, otp, 'EX', 86400);
+        await redisClient.set(attemptsKey, 3, 'EX', 86400);
+        console.log(`OTP ${otp} stored for order ${order.order_display_id}`);
+      } catch (redisErr) {
+        console.error('Redis OTP storage error:', redisErr);
+      }
+    }
+
+    res.json({ message: `Milestone '${milestone}' updated successfully.` });
 
   } catch (err) {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-// ============================================================================
-// 8. VERIFY DELIVERY OTP AND RELEASE FUNDS (DRIVER)
-// ============================================================================
-// ============================================================================
-// 8. VERIFY DELIVERY OTP AND RELEASE FUNDS (DRIVER) — NEW REDIS FLOW
-// ============================================================================
 router.post('/:id/verify-otp', authenticate, requireRole(['driver']), async (req, res) => {
   const orderId = req.params.id;
-  const { otp } = req.body;
+  const { otp, hours_driven, end_time } = req.body;
 
   if (!otp) {
-    return res.status(400).json({ error: 'Invalid OTP' });
+    return res.status(400).json({ error: 'OTP is required.' });
   }
 
   try {
-    // 8.1 Fetch order and verify driver is assigned
     const { data: order, error: orderErr } = await supabase
       .from('orders')
-      .select('id, order_display_id, driver_id, status')
+      .select('order_display_id, driver_id, total_amount')
       .eq('id', orderId)
       .maybeSingle();
 
@@ -690,102 +574,60 @@ router.post('/:id/verify-otp', authenticate, requireRole(['driver']), async (req
     }
 
     if (order.driver_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access Denied: You are not assigned to this order.' });
+      return res.status(403).json({ error: 'Access Denied.' });
     }
 
-    // Prevent re-completion if already released
-    if (order.status === 'payment_released' || order.status === 'delivered') {
-      return res.status(400).json({ error: 'OTP already verified.' });
+    const otpKey = `otp:${order.order_display_id}`;
+    const attemptsKey = `otp_attempts:${order.order_display_id}`;
+
+    let attemptsLeft = await redisClient.get(attemptsKey);
+    if (attemptsLeft === null) {
+      return res.status(410).json({ error: 'OTP has expired or was not generated.' });
     }
-
-    // Redis keys
-    const orderDisplayId = order.order_display_id;
-    const otpKey = `order:otp:${orderDisplayId}`;
-    const attemptsKey = `order:otp:attempts:${orderDisplayId}`;
-
-    if (!redisClient) {
-      return res.status(500).json({ error: 'Redis not configured.' });
-    }
-
-    // Lockout protection
-    const rawAttempts = await redisClient.get(attemptsKey);
-    const attempts = rawAttempts ? Number(rawAttempts) : 0;
-    const maxAttempts = 3;
-
-    if (attempts >= maxAttempts) {
-      return res.status(429).json({ error: 'OTP verification locked' });
+    if (attemptsLeft <= 0) {
+      return res.status(429).json({ error: 'Too many failed attempts. Please contact support.' });
     }
 
     const storedOtp = await redisClient.get(otpKey);
 
-    if (!storedOtp || storedOtp !== String(otp)) {
-      // Increment attempts
-      const newAttempts = await redisClient.incr(attemptsKey);
-      // Set TTL on attempts lock aligned with OTP TTL (24h)
-      if (newAttempts === 1) {
-        await redisClient.expire(attemptsKey, 86400);
-      }
-
-      const after = Number(newAttempts);
-      if (after >= maxAttempts) {
-        return res.status(429).json({ error: 'OTP verification locked' });
-      }
-
-      return res.status(400).json({ error: 'Invalid OTP' });
+    if (storedOtp !== otp) {
+      await redisClient.decr(attemptsKey);
+      return res.status(400).json({ error: 'Invalid OTP.' });
     }
 
-    // OTP verified: reset attempts counter and delete OTP
-    await Promise.all([
-      redisClient.del(otpKey),
-      redisClient.del(attemptsKey),
-    ]);
+    const netEarnings = Math.round(order.total_amount * 0.90);
 
-    // 8.3 Mark OTP as verified and update order status
-    const { data: updatedOrder, error: updateErr } = await supabase
-      .from('orders')
-      .update({
-        otp_verified: true,
-        status: 'payment_released',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', orderId)
-      .select('*')
-      .single();
+    const { error: rpcErr } = await supabase.rpc('complete_trip_tx', {
+      p_trip_display_id: order.order_display_id,
+      p_driver_id: req.user.id,
+      p_net_earnings: netEarnings,
+      p_hours_driven: hours_driven || 0,
+      p_end_time: end_time || new Date().toISOString()
+    });
 
-    if (updateErr) {
-      return res.status(500).json({ error: 'Failed to verify OTP.', details: updateErr.message });
+    if (rpcErr) {
+      console.error('complete_trip_tx RPC error:', rpcErr.message);
+      return res.status(500).json({
+        error: 'Failed to complete the trip transaction.',
+        details: rpcErr.message
+      });
     }
 
-    // 8.4 Update order timeline milestone Delivered
+    await redisClient.del(otpKey);
+    await redisClient.del(attemptsKey);
+
     await supabase
       .from('order_timeline')
       .update({ completed: true, milestone_time: new Date().toISOString() })
       .eq('order_display_id', order.order_display_id)
       .eq('milestone', 'Delivered');
 
-    // 8.5 Call complete_trip_tx RPC (current RPC signature)
-    const { error: rpcErr } = await supabase.rpc('complete_trip_tx', {
-      p_order_id: orderId
-    });
-
-    if (rpcErr) {
-      return res.status(500).json({ error: 'Trip completion failed.', details: rpcErr.message });
-    }
-
-    res.json({
-      message: 'Delivery verified successfully! Payment released to driver.',
-      order: updatedOrder
-    });
+    res.json({ message: 'Delivery confirmed and trip completed successfully.' });
 
   } catch (err) {
+    console.error('OTP verification error:', err.message);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
-// Backward compatibility: old endpoint (DB-field OTP) is kept.
-router.post('/:id/verify-delivery', authenticate, requireRole(['driver']), async (req, res) => {
-  return res.status(410).json({ error: 'Deprecated. Use /verify-otp.' });
-});
-
 
 export default router;
