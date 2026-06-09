@@ -1,4 +1,27 @@
-import { firebaseAdmin, supabase } from '../config/db.js';
+import { firebaseAdmin, supabase, redisClient } from '../config/db.js';
+
+const PROFILE_CACHE_TTL_SECONDS = 15 * 60; // 900
+
+function getProfileCacheKey(firebaseUid) {
+  return `user:profile:${firebaseUid}`;
+}
+
+/**
+ * Invalidate cached profile for a given Firebase UID.
+ *
+ * This is intended to be called by profile update routes/services.
+ */
+export async function invalidateUserProfileCache(firebaseUid) {
+  if (!firebaseUid) return;
+  if (!redisClient) return;
+
+  const cacheKey = getProfileCacheKey(firebaseUid);
+  try {
+    await redisClient.del(cacheKey);
+  } catch (err) {
+    console.error('[auth] Failed to invalidate profile cache:', err?.message || err);
+  }
+}
 
 /**
  * Authentication middleware to verify requests using Firebase ID Tokens.
@@ -56,7 +79,29 @@ export async function authenticate(req, res, next) {
       return res.status(500).json({ error: 'Supabase client is not configured on this server.' });
     }
 
-    // 2. Fetch corresponding profile from Supabase
+    // 2. Try to fetch profile from Redis cache first
+    const cacheKey = getProfileCacheKey(firebaseUid);
+    if (redisClient) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          const profile = JSON.parse(cached);
+          req.user = {
+            id: profile.id,
+            uid: profile.firebase_uid,
+            role: profile.role,
+            fullName: profile.full_name,
+            phone: profile.phone
+          };
+          return next();
+        }
+      } catch (cacheErr) {
+        console.error('[auth] Redis cache read failed:', cacheErr?.message || cacheErr);
+        // fall back to DB lookup
+      }
+    }
+
+    // 3. Cache miss (or Redis unavailable): Fetch corresponding profile from Supabase
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('id, firebase_uid, role, full_name, phone')
@@ -70,12 +115,12 @@ export async function authenticate(req, res, next) {
 
     if (!profile) {
       return res.status(403).json({ 
-        error: 'User profile not found in database.', 
+        error: 'User profile not found in database.',
         hint: 'Register user in profiles table first using user_id linked to Firebase UID.' 
       });
     }
 
-    // 3. Attach user data to request context
+    // 4. Attach user data to request context
     req.user = {
       id: profile.id,
       uid: profile.firebase_uid,
@@ -84,12 +129,28 @@ export async function authenticate(req, res, next) {
       phone: profile.phone
     };
 
+    // 5. Store profile in Redis for subsequent requests (best-effort)
+    if (redisClient) {
+      try {
+        await redisClient.set(
+          cacheKey,
+          JSON.stringify(profile),
+          'EX',
+          PROFILE_CACHE_TTL_SECONDS
+        );
+      } catch (cacheErr) {
+        console.error('[auth] Redis cache write failed:', cacheErr?.message || cacheErr);
+        // do not fail auth
+      }
+    }
+
     next();
   } catch (error) {
     console.error('Auth verification error:', error.message);
     res.status(401).json({ error: 'Invalid or expired authentication token.' });
   }
 }
+
 
 /**
  * Middleware to restrict route access to specific roles.
