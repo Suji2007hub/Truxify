@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
+
 import '../theme/app_theme.dart';
 import '../data/mock_data.dart';
 
@@ -11,6 +13,8 @@ class EarningsScreen extends StatefulWidget {
 }
 
 class _EarningsScreenState extends State<EarningsScreen> {
+  bool _isLoading = true;
+
   // Current calendar view month/year
   int _currentYear = 2026;
   int _currentMonth = 5; // Default to May 2026
@@ -491,6 +495,15 @@ class _EarningsScreenState extends State<EarningsScreen> {
     super.initState();
     // Default selected date to May 14, 2026 (a busy day with data)
     _selectedDate = DateTime(2026, 5, 14);
+
+    // Simulated network request during development.
+    // Replace this with real API calls later.
+    Future.delayed(const Duration(milliseconds: 1500)).then((_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    });
   }
 
   // Get date key format: "YYYY-MM-DD"
@@ -627,6 +640,21 @@ class _EarningsScreenState extends State<EarningsScreen> {
   }
 
   Widget _buildOverallSummaryCards() {
+    if (_isLoading) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Expanded(child: _buildSummaryCardShimmer()),
+            const SizedBox(width: 12),
+            Expanded(child: _buildSummaryCardShimmer()),
+            const SizedBox(width: 12),
+            Expanded(child: _buildSummaryCardShimmer()),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -659,6 +687,70 @@ class _EarningsScreenState extends State<EarningsScreen> {
     );
   }
 
+  Widget _buildSummaryCardShimmer() {
+    final Color base =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.25);
+    final Color highlight =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.45);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.01),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Shimmer.fromColors(
+            baseColor: base,
+            highlightColor: highlight,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Container(width: 20, height: 20, color: base),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Shimmer.fromColors(
+            baseColor: base,
+            highlightColor: highlight,
+            child: Container(
+              height: 18,
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              color: base,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Shimmer.fromColors(
+            baseColor: base,
+            highlightColor: highlight,
+            child: Container(
+              height: 12,
+              width: 80,
+              color: base,
+              margin: const EdgeInsets.only(bottom: 4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummaryCard({
     required String value,
     required String label,
@@ -672,7 +764,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
         decoration: BoxDecoration(
           color: Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          border:
+              Border.all(color: Theme.of(context).colorScheme.outlineVariant),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.01),
@@ -836,6 +929,10 @@ class _EarningsScreenState extends State<EarningsScreen> {
                 return const SizedBox.shrink();
               }
 
+              if (_isLoading) {
+                return _buildHeatmapCellShimmer();
+              }
+
               final int day = index - leadingEmptyCells + 1;
               final DateTime cellDate =
                   DateTime(_currentYear, _currentMonth, day);
@@ -848,7 +945,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
               }
 
               // Determine color based on earnings magnitude relative to max ₹8,400
-              Color cellBgColor = Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3);
+              Color cellBgColor =
+                  Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3);
               Color textColor = Theme.of(context).colorScheme.onSurface;
               FontWeight textWeight = FontWeight.normal;
 
@@ -868,7 +966,10 @@ class _EarningsScreenState extends State<EarningsScreen> {
                 }
               } else if (_dailyData.containsKey(cellKey) && earnings == 0.0) {
                 // Cancelled day (grey card outline style)
-                cellBgColor = Theme.of(context).colorScheme.outlineVariant.withOpacity(0.6);
+                cellBgColor = Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withOpacity(0.6);
                 textColor = TruxifyColors.adaptiveSecondaryText(context);
               }
 
@@ -929,7 +1030,10 @@ class _EarningsScreenState extends State<EarningsScreen> {
                 ),
               ),
               const SizedBox(width: 4),
-              _buildLegendBox(Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
+              _buildLegendBox(Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withOpacity(0.3)),
               const SizedBox(width: 2),
               _buildLegendBox(TruxifyColors.accent.withOpacity(0.2)),
               const SizedBox(width: 2),
@@ -953,6 +1057,25 @@ class _EarningsScreenState extends State<EarningsScreen> {
     );
   }
 
+  Widget _buildHeatmapCellShimmer() {
+    final Color base =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.25);
+    final Color highlight =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.45);
+
+    return Shimmer.fromColors(
+      baseColor: base,
+      highlightColor: highlight,
+      child: Container(
+        margin: const EdgeInsets.all(1),
+        decoration: BoxDecoration(
+          color: base,
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLegendBox(Color color) {
     return Container(
       width: 10,
@@ -965,6 +1088,105 @@ class _EarningsScreenState extends State<EarningsScreen> {
   }
 
   Widget _buildSelectedDateDetailsCard() {
+    if (_isLoading) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: BorderRadius.circular(24),
+          border:
+              Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Shimmer.fromColors(
+                  baseColor: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withOpacity(0.25),
+                  highlightColor: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withOpacity(0.45),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Shimmer.fromColors(
+                    baseColor: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withOpacity(0.25),
+                    highlightColor: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withOpacity(0.45),
+                    child: Container(
+                      height: 16,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .outlineVariant
+                            .withOpacity(0.25),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child:
+                  Divider(color: Theme.of(context).colorScheme.outlineVariant),
+            ),
+            Row(
+              children: [
+                Expanded(child: _buildSelectedMetricShimmer()),
+                Expanded(child: _buildSelectedMetricShimmer()),
+                Expanded(child: _buildSelectedMetricShimmer()),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'COMPLETED TRIPS',
+              style: GoogleFonts.dmSans(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: TruxifyColors.adaptiveSecondaryText(context),
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Column(
+              children: [
+                _buildTripCardShimmer(),
+                _buildTripCardShimmer(),
+                _buildTripCardShimmer(),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     final String dateKey = _getDateKey(_selectedDate);
     final bool hasData = _dailyData.containsKey(dateKey);
     final data = _dailyData[dateKey];
@@ -1064,9 +1286,12 @@ class _EarningsScreenState extends State<EarningsScreen> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.3),
+                  color: Theme.of(context)
+                      .scaffoldBackgroundColor
+                      .withOpacity(0.3),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                  border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1095,7 +1320,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
                                 style: GoogleFonts.dmSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onSurface,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 2),
@@ -1103,7 +1329,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
                                 trip['customer'] as String,
                                 style: GoogleFonts.dmSans(
                                   fontSize: 12,
-                                  color: TruxifyColors.adaptiveSecondaryText(context),
+                                  color: TruxifyColors.adaptiveSecondaryText(
+                                      context),
                                 ),
                               ),
                             ],
@@ -1122,7 +1349,9 @@ class _EarningsScreenState extends State<EarningsScreen> {
                     if (trip['verified'] == true) ...[
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Divider(color: Theme.of(context).colorScheme.outlineVariant, height: 1),
+                        child: Divider(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            height: 1),
                       ),
                       Row(
                         children: [
@@ -1139,7 +1368,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.dmSans(
                                   fontSize: 10,
-                                  color: TruxifyColors.adaptiveSecondaryText(context),
+                                  color: TruxifyColors.adaptiveSecondaryText(
+                                      context),
                                   fontWeight: FontWeight.w500),
                             ),
                           ),
@@ -1271,6 +1501,139 @@ class _EarningsScreenState extends State<EarningsScreen> {
     );
   }
 
+  Widget _buildSelectedMetricShimmer() {
+    final Color base =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.25);
+    final Color highlight =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.45);
+
+    return Column(
+      children: [
+        Shimmer.fromColors(
+          baseColor: base,
+          highlightColor: highlight,
+          child: Container(
+            height: 14,
+            width: 70,
+            margin: const EdgeInsets.only(bottom: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              color: base,
+            ),
+          ),
+        ),
+        Shimmer.fromColors(
+          baseColor: base,
+          highlightColor: highlight,
+          child: Container(
+            height: 18,
+            width: 90,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              color: base,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTripCardShimmer() {
+    final Color base =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.25);
+
+    final Color highlight =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.45);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Shimmer.fromColors(
+                baseColor: base,
+                highlightColor: highlight,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                  ),
+                  child: Container(color: base),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Shimmer.fromColors(
+                      baseColor: base,
+                      highlightColor: highlight,
+                      child: Container(
+                        height: 14,
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          color: base,
+                        ),
+                      ),
+                    ),
+                    Shimmer.fromColors(
+                      baseColor: base,
+                      highlightColor: highlight,
+                      child: Container(
+                        height: 12,
+                        width: 160,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          color: base,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Shimmer.fromColors(
+                baseColor: base,
+                highlightColor: highlight,
+                child: Container(
+                  height: 16,
+                  width: 70,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    color: base,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Shimmer.fromColors(
+            baseColor: base,
+            highlightColor: highlight,
+            child: Container(
+              height: 12,
+              width: 180,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: base,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDailyMetric({
     required String label,
     required String value,
@@ -1310,7 +1673,157 @@ class _EarningsScreenState extends State<EarningsScreen> {
     );
   }
 
+  Widget _buildPendingPaymentRowShimmer() {
+    final Color base =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.25);
+    final Color highlight =
+        Theme.of(context).colorScheme.outlineVariant.withOpacity(0.45);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12.0),
+      child: Row(
+        children: [
+          Shimmer.fromColors(
+            baseColor: base,
+            highlightColor: highlight,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+              ),
+              child: Container(color: base),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Shimmer.fromColors(
+                  baseColor: base,
+                  highlightColor: highlight,
+                  child: Container(
+                    height: 16,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: base,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Shimmer.fromColors(
+                  baseColor: base,
+                  highlightColor: highlight,
+                  child: Container(
+                    height: 12,
+                    width: 200,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: base,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Shimmer.fromColors(
+            baseColor: base,
+            highlightColor: highlight,
+            child: Container(
+              height: 16,
+              width: 90,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: base,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPendingPaymentsCard() {
+    if (_isLoading) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: BorderRadius.circular(24),
+          border:
+              Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Shimmer.fromColors(
+                    baseColor: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withOpacity(0.25),
+                    highlightColor: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withOpacity(0.45),
+                    child: Container(
+                      height: 16,
+                      width: 180,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .outlineVariant
+                            .withOpacity(0.25),
+                      ),
+                    ),
+                  ),
+                ),
+                Shimmer.fromColors(
+                  baseColor: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withOpacity(0.25),
+                  highlightColor: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withOpacity(0.45),
+                  child: Container(
+                    height: 26,
+                    width: 96,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withOpacity(0.25),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildPendingPaymentRowShimmer(),
+            _buildPendingPaymentRowShimmer(),
+            _buildPendingPaymentRowShimmer(),
+          ],
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
