@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 import '../theme/app_theme.dart';
 import '../data/mock_data.dart';
 
@@ -11,17 +12,12 @@ class EarningsScreen extends StatefulWidget {
 }
 
 class _EarningsScreenState extends State<EarningsScreen> {
-  // Current calendar view month/year
+  bool _isLoading = true;
   int _currentYear = 2026;
-  int _currentMonth = 5; // Default to May 2026
-
-  // Currently selected date for detailed stats (Default to May 14, 2026)
+  int _currentMonth = 5;
   late DateTime _selectedDate;
 
-  // Map of daily earnings and statistics (May/June 2026)
-  // Key format: "YYYY-MM-DD"
   final Map<String, Map<String, dynamic>> _dailyData = {
-    // May 2026 daily data
     '2026-05-01': {
       'earnings': 3800.0,
       'hours': 8.5,
@@ -253,123 +249,107 @@ class _EarningsScreenState extends State<EarningsScreen> {
           'verified': true,
         },
         {
-          'route': 'Delhi → Jaipur',
-          'customer': 'Sharma Exports',
+          'route': 'Delhi → Chandigarh',
+          'customer': 'Mehta Traders',
           'amount': '₹2,000',
           'status': 'Delivered',
-          'hash': '0x9cf11a4b5e...1b39',
+          'hash': '0x1aa63bce90...c901',
           'verified': true,
         }
       ],
     },
     '2026-05-20': {
-      'earnings': 2800.0,
-      'hours': 6.5,
+      'earnings': 3800.0,
+      'hours': 8.5,
       'trips': [
         {
-          'route': 'Vadodara → Pune',
-          'customer': 'Sri Textiles',
-          'amount': '₹2,800',
+          'route': 'Surat → Vadodara',
+          'customer': 'Karthik Murugan',
+          'amount': '₹3,800',
           'status': 'Delivered',
-          'hash': '0x9cf11a4b5e...1b39',
+          'hash': '0x3a574d5c8f2c...31128',
           'verified': true,
         }
       ],
     },
     '2026-05-21': {
-      'earnings': 3900.0,
-      'hours': 8.0,
+      'earnings': 1300.0,
+      'hours': 4.0,
       'trips': [
         {
-          'route': 'Surat → Jaipur',
-          'customer': 'Karthik Murugan',
-          'amount': '₹3,900',
+          'route': 'Surat → Mumbai',
+          'customer': 'Raj Textiles',
+          'amount': '₹1,300',
           'status': 'Delivered',
-          'hash': '0x3a574d5...8f2c',
+          'hash': '0x4f128bc...de98',
           'verified': true,
         }
       ],
     },
     '2026-05-22': {
-      'earnings': 5100.0,
-      'hours': 11.2,
+      'earnings': 1200.0,
+      'hours': 3.5,
       'trips': [
         {
-          'route': 'Mumbai → Ahmedabad',
-          'customer': 'Raj Textiles',
-          'amount': '₹3,100',
-          'status': 'Delivered',
-          'hash': '0x5b2b1e3...6ad1',
-          'verified': true,
-        },
-        {
-          'route': 'Ahmedabad → Surat',
+          'route': 'Surat → Mumbai',
           'customer': 'Mehta Traders',
-          'amount': '₹2,000',
+          'amount': '₹1,200',
           'status': 'Delivered',
-          'hash': '0x1aa63bce90...c901',
+          'hash': '0x8f2d5e1...bc90',
           'verified': true,
         }
       ],
     },
     '2026-05-23': {
-      'earnings': 1800.0,
-      'hours': 4.0,
+      'earnings': 3400.0,
+      'hours': 7.8,
       'trips': [
         {
-          'route': 'Vadodara → Jaipur',
-          'customer': 'Mehta Traders',
-          'amount': '₹1,800',
+          'route': 'Vadodara → Pune',
+          'customer': 'Sri Textiles',
+          'amount': '₹3,400',
           'status': 'Delivered',
-          'hash': '0x3a574d5...8f2c',
+          'hash': '0x9cf11a4b5e...1b39',
           'verified': true,
         }
       ],
     },
     '2026-05-25': {
-      'earnings': 3000.0,
-      'hours': 6.8,
+      'earnings': 2100.0,
+      'hours': 5.0,
       'trips': [
         {
-          'route': 'Surat → Mumbai',
-          'customer': 'Karthik Murugan',
-          'amount': '₹3,000',
+          'route': 'Vadodara → Mumbai',
+          'customer': 'Mehta Traders',
+          'amount': '₹2,100',
           'status': 'Delivered',
-          'hash': '0x7e1a3bc...2d9e',
+          'hash': '0x2d9e1f4...5def',
           'verified': true,
         }
       ],
     },
     '2026-05-26': {
-      'earnings': 4100.0,
-      'hours': 9.5,
+      'earnings': 4800.0,
+      'hours': 8.2,
       'trips': [
         {
           'route': 'Ahmedabad → Pune',
           'customer': 'Sri Textiles',
-          'amount': '₹2,500',
+          'amount': '₹4,800',
           'status': 'Delivered',
-          'hash': '0x9cf11a4b5e...1b39',
-          'verified': true,
-        },
-        {
-          'route': 'Pune → Mumbai',
-          'customer': 'Mehta Traders',
-          'amount': '₹1,600',
-          'status': 'Delivered',
-          'hash': '0x1aa63bce90...c901',
+          'hash': '0x9cf11a4...1b39',
           'verified': true,
         }
       ],
     },
     '2026-05-27': {
-      'earnings': 2300.0,
-      'hours': 5.4,
+      'earnings': 2400.0,
+      'hours': 6.0,
       'trips': [
         {
-          'route': 'Surat → Ahmedabad',
+          'route': 'Surat → Jaipur',
           'customer': 'Karthik Murugan',
-          'amount': '₹2,300',
+          'amount': '₹2,400',
           'status': 'Delivered',
           'hash': '0x7e1a3bc...2d9e',
           'verified': true,
@@ -377,109 +357,101 @@ class _EarningsScreenState extends State<EarningsScreen> {
       ],
     },
     '2026-05-28': {
-      'earnings': 3600.0,
-      'hours': 8.0,
+      'earnings': 1500.0,
+      'hours': 4.5,
+      'trips': [
+        {
+          'route': 'Vadodara → Ahmedabad',
+          'customer': 'Krishna Exports',
+          'amount': '₹1,500',
+          'status': 'Delivered',
+          'hash': '0x5b2b1e3...6ad1',
+          'verified': true,
+        }
+      ],
+    },
+    '2026-05-29': {
+      'earnings': 8400.0,
+      'hours': 17.8,
+      'trips': [
+        {
+          'route': 'Mumbai → Delhi',
+          'customer': 'Raj Textiles',
+          'amount': '₹8,400',
+          'status': 'Delivered',
+          'hash': '0x5b2b1e3...6ad1',
+          'verified': true,
+        }
+      ],
+    },
+    '2026-05-30': {
+      'earnings': 3100.0,
+      'hours': 7.0,
       'trips': [
         {
           'route': 'Vadodara → Jaipur',
           'customer': 'Mehta Traders',
-          'amount': '₹3,600',
+          'amount': '₹3,100',
           'status': 'Delivered',
           'hash': '0x3a574d5...8f2c',
           'verified': true,
         }
       ],
     },
-    '2026-05-29': {
-      'earnings': 4800.0,
-      'hours': 10.5,
-      'trips': [
-        {
-          'route': 'Mumbai → Delhi',
-          'customer': 'Raj Textiles',
-          'amount': '₹3,000',
-          'status': 'Delivered',
-          'hash': '0x5b2b1e3...6ad1',
-          'verified': true,
-        },
-        {
-          'route': 'Delhi → Jaipur',
-          'customer': 'Sharma Exports',
-          'amount': '₹1,800',
-          'status': 'Delivered',
-          'hash': '0x9cf11a4b5e...1b39',
-          'verified': true,
-        }
-      ],
-    },
-    '2026-05-30': {
-      'earnings': 2000.0,
-      'hours': 4.8,
-      'trips': [
-        {
-          'route': 'Vadodara → Pune',
-          'customer': 'Sri Textiles',
-          'amount': '₹2,000',
-          'status': 'Delivered',
-          'hash': '0x9cf11a4b5e...1b39',
-          'verified': true,
-        }
-      ],
-    },
-    '2026-05-31': {
-      'earnings': 1200.0,
-      'hours': 3.2,
-      'trips': [
-        {
-          'route': 'Surat → Mumbai',
-          'customer': 'Karthik Murugan',
-          'amount': '₹1,200',
-          'status': 'Delivered',
-          'hash': '0x7e1a3bc...2d9e',
-          'verified': true,
-        }
-      ],
-    },
-
     // June 2026 daily data
     '2026-06-01': {
       'earnings': 4200.0,
       'hours': 9.0,
       'trips': [
         {
-          'route': 'Surat → Jaipur',
-          'customer': 'Karthik Murugan',
+          'route': 'Ahmedabad → Pune',
+          'customer': 'Sri Textiles',
           'amount': '₹4,200',
+          'status': 'Delivered',
+          'hash': '0x9cf11a4b5e...1b39',
+          'verified': true,
+        }
+      ],
+    },
+    '2026-06-02': {
+      'earnings': 2400.0,
+      'hours': 5.5,
+      'trips': [
+        {
+          'route': 'Surat → Ahmedabad',
+          'customer': 'Karthik Murugan',
+          'amount': '₹2,400',
+          'status': 'Delivered',
+          'hash': '0x7e1a3bc...2d9e',
+          'verified': true,
+        }
+      ],
+    },
+    '2026-06-03': {
+      'earnings': 2200.0,
+      'hours': 5.2,
+      'trips': [
+        {
+          'route': 'Vadodara → Jaipur',
+          'customer': 'Mehta Traders',
+          'amount': '₹2,200',
           'status': 'Delivered',
           'hash': '0x3a574d5...8f2c',
           'verified': true,
         }
       ],
     },
-    '2026-06-02': {
-      'earnings': 3100.0,
-      'hours': 7.5,
+    '2026-06-04': {
+      'earnings': 4500.0,
+      'hours': 10.0,
       'trips': [
         {
-          'route': 'Vadodara → Mumbai',
-          'customer': 'Mehta Traders',
-          'amount': '₹3,100',
+.
+          'route': 'Mumbai → Delhi',
+          'customer': 'Raj Textiles',
+          'amount': '₹4,500',
           'status': 'Delivered',
-          'hash': '0x1aa63bce90...c901',
-          'verified': true,
-        }
-      ],
-    },
-    '2026-06-03': {
-      'earnings': 5400.0,
-      'hours': 10.2,
-      'trips': [
-        {
-          'route': 'Surat → Vadodara',
-          'customer': 'Karthik Murugan',
-          'amount': '₹5,400',
-          'status': 'Delivered',
-          'hash': '0x3a574d5c8f2c...31128',
+          'hash': '0x5b2b1e3...6ad1',
           'verified': true,
         }
       ],
@@ -489,820 +461,578 @@ class _EarningsScreenState extends State<EarningsScreen> {
   @override
   void initState() {
     super.initState();
-    // Default selected date to May 14, 2026 (a busy day with data)
     _selectedDate = DateTime(2026, 5, 14);
+    _loadData();
   }
 
-  // Get date key format: "YYYY-MM-DD"
-  String _getDateKey(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  // Month navigation: previous month
-  void _prevMonth() {
-    setState(() {
-      if (_currentMonth == 6) {
-        _currentMonth = 5;
-      } else {
-        _currentMonth = 6;
-      }
-    });
-  }
-
-  // Month navigation: next month
-  void _nextMonth() {
-    setState(() {
-      if (_currentMonth == 5) {
-        _currentMonth = 6;
-      } else {
-        _currentMonth = 5;
-      }
-    });
-  }
-
-  // Custom helper for formatting date: Thursday, 14 May 2026
-  String _formatFullDate(DateTime date) {
-    final weekdays = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday'
-    ];
-    final months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December'
-    ];
-    final weekday = weekdays[date.weekday - 1];
-    final month = months[date.month - 1];
-    return '$weekday, ${date.day} $month ${date.year}';
-  }
-
-  String _getMonthYearLabel(int month, int year) {
-    final months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December'
-    ];
-    return '${months[month - 1]} $year';
+  Future<void> _loadData() async {
+    // Simulate network request
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          // Premium App Bar
-          SliverAppBar(
-            backgroundColor: Theme.of(context).colorScheme.surface,
-            pinned: true,
+      appBar: AppBar(
+        title: const Text('Earnings'),
+        centerTitle: false,
+        elevation: 0,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _isLoading ? _buildOverallSummaryShimmer() : _buildOverallSummaryCards(),
+            const SizedBox(height: 24),
+            _isLoading ? _buildHeatmapCalendarShimmer() : _buildHeatmapCalendarCard(),
+            const SizedBox(height: 24),
+            _isLoading ? _buildSelectedDateDetailsShimmer() : _buildSelectedDateDetailsCard(),
+            const SizedBox(height: 24),
+            _isLoading ? _buildPendingPaymentsShimmer() : _buildPendingPaymentsCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Shimmer Widgets
+  Widget _buildShimmerPlaceholder({double? width, double? height, BoxShape shape = BoxShape.rectangle}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final baseColor = isDarkMode ? Colors.grey[800]! : Colors.grey[300]!;
+    final highlightColor = isDarkMode ? Colors.grey[700]! : Colors.grey[100]!;
+
+    return Shimmer.fromColors(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: shape,
+          borderRadius: shape == BoxShape.rectangle ? BorderRadius.circular(8) : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverallSummaryShimmer() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(3, (index) {
+        return Expanded(
+          child: Card(
             elevation: 0,
-            surfaceTintColor: Colors.transparent,
-            title: Text(
-              'Earnings',
-              style: GoogleFonts.dmSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(1),
-              child: Container(
-                height: 1,
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
-          ),
-
-          SliverToBoxAdapter(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Top Section: Row of 3 standalone overall performance summary cards showing earnings
-                  _buildOverallSummaryCards(),
-                  const SizedBox(height: 24),
-
-                  // 2. Middle Section: Heatmap style calendar for date selection
-                  _buildHeatmapCalendarCard(),
-                  const SizedBox(height: 24),
-
-                  // 3. Bottom Section: Detailed statistics for the selected date
-                  _buildSelectedDateDetailsCard(),
-                  const SizedBox(height: 24),
-
-                  // 4. Persistent Pending Payments Card at the bottom
-                  _buildPendingPaymentsCard(),
-                  const SizedBox(height: 40),
+                  _buildShimmerPlaceholder(width: 80, height: 14),
+                  const SizedBox(height: 8),
+                  _buildShimmerPlaceholder(width: 100, height: 24),
                 ],
               ),
             ),
           ),
-        ],
-      ),
+        );
+      }),
     );
   }
 
-  Widget _buildOverallSummaryCards() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _buildSummaryCard(
-            value: '₹4,200',
-            label: 'Today',
-            icon: Icons.today_rounded,
-            iconColor: TruxifyColors.accent,
-            bgColor: TruxifyColors.accentLight,
-          ),
-          const SizedBox(width: 12),
-          _buildSummaryCard(
-            value: '₹18,400',
-            label: 'This Week',
-            icon: Icons.date_range_rounded,
-            iconColor: TruxifyColors.warning,
-            bgColor: TruxifyColors.warningLight,
-          ),
-          const SizedBox(width: 12),
-          _buildSummaryCard(
-            value: '₹72,500',
-            label: 'This Month',
-            icon: Icons.calendar_month_rounded,
-            iconColor: TruxifyColors.success,
-            bgColor: TruxifyColors.successLight,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryCard({
-    required String value,
-    required String label,
-    required IconData icon,
-    required Color iconColor,
-    required Color bgColor,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.01),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+  Widget _buildHeatmapCalendarShimmer() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildShimmerPlaceholder(width: 120, height: 20),
+                _buildShimmerPlaceholder(width: 80, height: 20),
+              ],
+            ),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 1.0,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: 42,
+              itemBuilder: (context, index) {
+                return _buildShimmerPlaceholder(shape: BoxShape.circle);
+              },
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedDateDetailsShimmer() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: bgColor,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
+            _buildShimmerPlaceholder(width: 150, height: 20),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildShimmerPlaceholder(width: 80, height: 14),
+                    const SizedBox(height: 4),
+                    _buildShimmerPlaceholder(width: 100, height: 24),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildShimmerPlaceholder(width: 80, height: 14),
+                    const SizedBox(height: 4),
+                    _buildShimmerPlaceholder(width: 60, height: 24),
+                  ],
+                ),
+              ],
             ),
+            const SizedBox(height: 16),
+            _buildShimmerPlaceholder(height: 1, width: double.infinity),
+            const SizedBox(height: 16),
+            _buildShimmerPlaceholder(width: 120, height: 18),
             const SizedBox(height: 12),
-            Text(
-              value,
-              style: GoogleFonts.dmSans(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.dmSans(
-                fontSize: 11,
-                color: TruxifyColors.adaptiveSecondaryText(context),
-                fontWeight: FontWeight.w500,
-              ),
+            // Shimmer for a trip item
+            Row(
+              children: [
+                _buildShimmerPlaceholder(width: 40, height: 40, shape: BoxShape.circle),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildShimmerPlaceholder(width: double.infinity, height: 16),
+                      const SizedBox(height: 4),
+                      _buildShimmerPlaceholder(width: 100, height: 14),
+                    ],
+                  ),
+                ),
+                _buildShimmerPlaceholder(width: 60, height: 20),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingPaymentsShimmer() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildShimmerPlaceholder(width: 180, height: 20),
+            const SizedBox(height: 16),
+            ...List.generate(3, (index) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Row(
+                  children: [
+                    _buildShimmerPlaceholder(width: 40, height: 40, shape: BoxShape.circle),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildShimmerPlaceholder(width: double.infinity, height: 16),
+                          const SizedBox(height: 4),
+                          _buildShimmerPlaceholder(width: 120, height: 14),
+                        ],
+                      ),
+                    ),
+                    _buildShimmerPlaceholder(width: 70, height: 20),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Existing Widgets
+  Widget _buildOverallSummaryCards() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final cardColor = isDarkMode ? theme.colorScheme.surface.withOpacity(0.5) : theme.cardColor;
+
+    return Row(
+      children: [
+        _buildSummaryCard('Today Earnings', '₹5,200', cardColor),
+        const SizedBox(width: 12),
+        _buildSummaryCard('This Week', '₹24,800', cardColor),
+        const SizedBox(width: 12),
+        _buildSummaryCard('This Month', '₹84,500', cardColor),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard(String title, String value, Color cardColor) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Card(
+        elevation: 0,
+        color: cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.roboto(
+                  fontSize: 14,
+                  color: theme.textTheme.bodySmall?.color,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: GoogleFonts.rubik(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: theme.textTheme.bodyLarge?.color,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildHeatmapCalendarCard() {
-    // Days in current selection
-    final DateTime firstDay = DateTime(_currentYear, _currentMonth, 1);
-    final int firstWeekday = firstDay.weekday; // 1 = Mon, 7 = Sun
-    final int totalDays = DateTime(_currentYear, _currentMonth + 1, 0).day;
-    final int leadingEmptyCells = firstWeekday - 1; // 0-indexed offset
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final cardColor = isDarkMode ? theme.colorScheme.surface.withOpacity(0.5) : theme.cardColor;
 
-    final int totalGridItems = leadingEmptyCells + totalDays;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Earning Calendar',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Tap a date to inspect trips',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11,
-                      color: TruxifyColors.adaptiveSecondaryText(context),
-                    ),
-                  ),
-                ],
-              ),
-              // Month Switchers
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: _prevMonth,
-                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                    visualDensity: VisualDensity.compact,
-                    style: IconButton.styleFrom(
-                      backgroundColor: TruxifyColors.accentVeryLight,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _getMonthYearLabel(_currentMonth, _currentYear),
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _nextMonth,
-                    icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                    visualDensity: VisualDensity.compact,
-                    style: IconButton.styleFrom(
-                      backgroundColor: TruxifyColors.accentVeryLight,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // Weekday Labels Row
-          Row(
-            children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label) {
-              return Expanded(
-                child: Center(
-                  child: Text(
-                    label,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: TruxifyColors.adaptiveSecondaryText(context),
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 10),
-
-          // Calendar Heatmap Grid
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: totalGridItems,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1.0,
-            ),
-            itemBuilder: (context, index) {
-              if (index < leadingEmptyCells) {
-                return const SizedBox.shrink();
-              }
-
-              final int day = index - leadingEmptyCells + 1;
-              final DateTime cellDate =
-                  DateTime(_currentYear, _currentMonth, day);
-              final String cellKey = _getDateKey(cellDate);
-              final bool isSelected = _getDateKey(_selectedDate) == cellKey;
-
-              double earnings = 0.0;
-              if (_dailyData.containsKey(cellKey)) {
-                earnings = _dailyData[cellKey]!['earnings'] as double;
-              }
-
-              // Determine color based on earnings magnitude relative to max ₹8,400
-              Color cellBgColor = Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3);
-              Color textColor = Theme.of(context).colorScheme.onSurface;
-              FontWeight textWeight = FontWeight.normal;
-
-              if (earnings > 0) {
-                // Scale opacity: higher earnings = darker accent color
-                final double scale = (earnings / 8400.0).clamp(0.0, 1.0);
-                final double opacity = 0.15 + (scale * 0.75);
-                cellBgColor = TruxifyColors.accent.withOpacity(opacity);
-
-                // For very dark cells, use white text
-                if (opacity > 0.6) {
-                  textColor = Colors.white;
-                  textWeight = FontWeight.bold;
-                } else {
-                  textColor = TruxifyColors.accentDark;
-                  textWeight = FontWeight.w600;
-                }
-              } else if (_dailyData.containsKey(cellKey) && earnings == 0.0) {
-                // Cancelled day (grey card outline style)
-                cellBgColor = Theme.of(context).colorScheme.outlineVariant.withOpacity(0.6);
-                textColor = TruxifyColors.adaptiveSecondaryText(context);
-              }
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedDate = cellDate;
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  decoration: BoxDecoration(
-                    color: cellBgColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: isSelected
-                        ? Border.all(color: TruxifyColors.accent, width: 2)
-                        : null,
-                    boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                              color: TruxifyColors.accent.withOpacity(0.3),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Center(
-                    child: Text(
-                      day.toString(),
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: isSelected ? FontWeight.bold : textWeight,
-                        color: isSelected
-                            ? (earnings > 0 &&
-                                    (0.15 + (earnings / 8400.0) * 0.75) > 0.6
-                                ? Colors.white
-                                : TruxifyColors.accent)
-                            : textColor,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-
-          // Heatmap Legend
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                'Less',
-                style: GoogleFonts.dmSans(
-                  fontSize: 10,
-                  color: TruxifyColors.adaptiveSecondaryText(context),
-                ),
-              ),
-              const SizedBox(width: 4),
-              _buildLegendBox(Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
-              const SizedBox(width: 2),
-              _buildLegendBox(TruxifyColors.accent.withOpacity(0.2)),
-              const SizedBox(width: 2),
-              _buildLegendBox(TruxifyColors.accent.withOpacity(0.45)),
-              const SizedBox(width: 2),
-              _buildLegendBox(TruxifyColors.accent.withOpacity(0.7)),
-              const SizedBox(width: 2),
-              _buildLegendBox(TruxifyColors.accent),
-              const SizedBox(width: 4),
-              Text(
-                'More',
-                style: GoogleFonts.dmSans(
-                  fontSize: 10,
-                  color: TruxifyColors.adaptiveSecondaryText(context),
-                ),
-              ),
-            ],
-          ),
-        ],
+    return Card(
+      elevation: 0,
+      color: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCalendarHeader(),
+            const SizedBox(height: 16),
+            _buildCalendarGrid(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildLegendBox(Color color) {
+  Widget _buildCalendarHeader() {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'May 2026',
+          style: GoogleFonts.rubik(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: theme.textTheme.bodyLarge?.color,
+          ),
+        ),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              onPressed: () {
+                // TODO: Handle previous month
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              onPressed: () {
+                // TODO: Handle next month
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCalendarGrid() {
+    final theme = Theme.of(context);
+    final daysInMonth = DateUtils.getDaysInMonth(_currentYear, _currentMonth);
+    final firstDayOfMonth = DateTime(_currentYear, _currentMonth, 1);
+    final weekdayOfFirstDay = firstDayOfMonth.weekday;
+
+    final List<Widget> dayWidgets = [];
+    final List<String> weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+    // Add weekday labels
+    for (var day in weekDays) {
+      dayWidgets.add(
+        Center(
+          child: Text(
+            day,
+            style: GoogleFonts.roboto(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: theme.textTheme.bodySmall?.color,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Add empty cells for days before the 1st of the month
+    for (int i = 1; i < weekdayOfFirstDay; i++) {
+      dayWidgets.add(Container());
+    }
+
+    // Add day cells
+    for (int i = 1; i <= daysInMonth; i++) {
+      final date = DateTime(_currentYear, _currentMonth, i);
+      final dateString = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+      final data = _dailyData[dateString];
+      final earnings = data?['earnings'] ?? 0.0;
+
+      dayWidgets.add(
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _selectedDate = date;
+            });
+          },
+          child: _buildDayCell(date, earnings),
+        ),
+      );
+    }
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 7,
+      childAspectRatio: 1.0,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      children: dayWidgets,
+    );
+  }
+
+  Widget _buildDayCell(DateTime date, double earnings) {
+    final theme = Theme.of(context);
+    final isSelected = DateUtils.isSameDay(date, _selectedDate);
+    final isToday = DateUtils.isSameDay(date, DateTime.now());
+
+    Color cellColor = Colors.transparent;
+    if (earnings > 0) {
+      if (earnings > 5000) {
+        cellColor = AppTheme.getHeatmapColor(5);
+      } else if (earnings > 3000) {
+        cellColor = AppTheme.getHeatmapColor(4);
+      } else if (earnings > 2000) {
+        cellColor = AppTheme.getHeatmapColor(3);
+      } else if (earnings > 1000) {
+        cellColor = AppTheme.getHeatmapColor(2);
+      } else {
+        cellColor = AppTheme.getHeatmapColor(1);
+      }
+    }
+
     return Container(
-      width: 10,
-      height: 10,
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(2),
+        color: cellColor,
+        shape: BoxShape.circle,
+        border: isSelected
+            ? Border.all(color: theme.primaryColor, width: 2)
+            : isToday
+                ? Border.all(color: theme.hintColor, width: 1)
+                : null,
+      ),
+      child: Center(
+        child: Text(
+          '${date.day}',
+          style: GoogleFonts.roboto(
+            color: earnings > 2000 ? Colors.white : theme.textTheme.bodyLarge?.color,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildSelectedDateDetailsCard() {
-    final String dateKey = _getDateKey(_selectedDate);
-    final bool hasData = _dailyData.containsKey(dateKey);
-    final data = _dailyData[dateKey];
-    final double earnings = hasData ? (data!['earnings'] as double) : 0.0;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final cardColor = isDarkMode ? theme.colorScheme.surface.withOpacity(0.5) : theme.cardColor;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header showing selected date
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: TruxifyColors.accentLight,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.calendar_today_rounded,
-                  color: TruxifyColors.accent,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _formatFullDate(_selectedDate),
-                  style: GoogleFonts.dmSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Divider(color: Theme.of(context).colorScheme.outlineVariant),
-          ),
+    final dateString = "${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}";
+    final data = _dailyData[dateString];
 
-          if (hasData && earnings > 0.0) ...[
-            // Daily Performance Stats Row
-            Row(
-              children: [
-                _buildDailyMetric(
-                  label: 'EARNINGS',
-                  value: '₹${earnings.toInt()}',
-                  icon: Icons.payments_outlined,
-                  color: TruxifyColors.accent,
-                ),
-                _buildDailyMetric(
-                  label: 'HOURS',
-                  value: '${data!['hours']}h',
-                  icon: Icons.timer_outlined,
-                  color: TruxifyColors.adaptiveSecondaryText(context),
-                ),
-                _buildDailyMetric(
-                  label: 'TRIPS',
-                  value: '${(data['trips'] as List).length}',
-                  icon: Icons.local_shipping_outlined,
-                  color: TruxifyColors.success,
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
+    if (data == null) {
+      return Card(
+        elevation: 0,
+        color: cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            'No activity on this day.',
+            style: GoogleFonts.roboto(color: theme.textTheme.bodySmall?.color),
+          ),
+        ),
+      );
+    }
 
-            // Completed Trips List
+    final earnings = data['earnings'] as double;
+    final hours = data['hours'] as double;
+    final trips = data['trips'] as List<Map<String, dynamic>>;
+
+    return Card(
+      elevation: 0,
+      color: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              'COMPLETED TRIPS',
-              style: GoogleFonts.dmSans(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: TruxifyColors.adaptiveSecondaryText(context),
-                letterSpacing: 1.0,
+              'Details for ${_selectedDate.day} May 2026',
+              style: GoogleFonts.rubik(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: theme.textTheme.bodyLarge?.color,
               ),
             ),
-            const SizedBox(height: 10),
-
-            ...(data['trips'] as List).map((trip) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            color: TruxifyColors.successLight,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.check_circle_rounded,
-                            color: TruxifyColors.success,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                trip['route'] as String,
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                trip['customer'] as String,
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 12,
-                                  color: TruxifyColors.adaptiveSecondaryText(context),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          trip['amount'] as String,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: TruxifyColors.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (trip['verified'] == true) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Divider(color: Theme.of(context).colorScheme.outlineVariant, height: 1),
-                      ),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            color: TruxifyColors.success.withOpacity(0.8),
-                            size: 12,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Verified on Polygon · ${trip['hash']}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.dmSans(
-                                  fontSize: 10,
-                                  color: TruxifyColors.adaptiveSecondaryText(context),
-                                  fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
-          ] else if (hasData && earnings == 0.0) ...[
-            // Cancelled trip state details
+            const SizedBox(height: 16),
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildDailyMetric(
-                  label: 'EARNINGS',
-                  value: '₹0',
-                  icon: Icons.payments_outlined,
-                  color: TruxifyColors.accent,
-                ),
-                _buildDailyMetric(
-                  label: 'HOURS',
-                  value: '${data!['hours']}h',
-                  icon: Icons.timer_outlined,
-                  color: TruxifyColors.adaptiveSecondaryText(context),
-                ),
-                _buildDailyMetric(
-                  label: 'TRIPS',
-                  value: '0',
-                  icon: Icons.local_shipping_outlined,
-                  color: TruxifyColors.adaptiveSecondaryText(context),
-                ),
+                _buildDetailItem('Daily Earnings', '₹${earnings.toStringAsFixed(2)}'),
+                _buildDetailItem('Hours Driven', '${hours.toStringAsFixed(1)}h'),
+                _buildDetailItem('Trips', '${trips.length}'),
               ],
             ),
-            const SizedBox(height: 20),
-
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: TruxifyColors.errorLight,
-                borderRadius: BorderRadius.circular(16),
-                border:
-                    Border.all(color: TruxifyColors.error.withOpacity(0.15)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.cancel_outlined,
-                          color: TruxifyColors.error, size: 20),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Trip Cancelled',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: TruxifyColors.error,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Load route from Vadodara → Mumbai was cancelled before pickup. Platform cancellation insurance was processed.',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 12,
-                      color: TruxifyColors.adaptiveSecondaryText(context),
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Transaction: ${(data['trips'] as List).isNotEmpty ? data['trips'][0]['hash'] : 'N/A'}',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 10,
-                      color: TruxifyColors.adaptiveSecondaryText(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ] else ...[
-            // Rest Day State
-            Center(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        color: TruxifyColors.accentVeryLight,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.spa_outlined,
-                        color: TruxifyColors.accent,
-                        size: 32,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Rest Day',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'No trips completed on this date. Take the time to rest, perform maintenance, or search for en-route loads.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        color: TruxifyColors.adaptiveSecondaryText(context),
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
+            if (trips.isNotEmpty) ...[
+              const Divider(height: 32),
+              Text(
+                'Trips on this day',
+                style: GoogleFonts.roboto(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: theme.textTheme.bodyLarge?.color,
                 ),
               ),
-            ),
+              const SizedBox(height: 12),
+              ...trips.map((trip) => _buildTripItem(trip)).toList(),
+            ]
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildDailyMetric({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Expanded(
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color.withOpacity(0.7), size: 14),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: GoogleFonts.dmSans(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: TruxifyColors.adaptiveSecondaryText(context),
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
+  Widget _buildDetailItem(String label, String value) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.roboto(
+            fontSize: 14,
+            color: theme.textTheme.bodySmall?.color,
           ),
-          const SizedBox(height: 6),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: GoogleFonts.rubik(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: theme.textTheme.bodyLarge?.color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTripItem(Map<String, dynamic> trip) {
+    final theme = Theme.of(context);
+    final status = trip['status'] as String;
+    final isCancelled = status == 'Cancelled';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        children: [
+          Icon(
+            isCancelled ? Icons.cancel_outlined : Icons.check_circle_outline,
+            color: isCancelled ? Colors.redAccent : Colors.green,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  trip['route'],
+                  style: GoogleFonts.roboto(
+                    fontWeight: FontWeight.bold,
+                    color: theme.textTheme.bodyLarge?.color,
+                  ),
+                ),
+                Text(
+                  'To: ${trip['customer']}',
+                  style: GoogleFonts.roboto(
+                    fontSize: 12,
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                ),
+              ],
+            ),
+          ),
           Text(
-            value,
-            style: GoogleFonts.dmSans(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurface,
+            trip['amount'],
+            style: GoogleFonts.rubik(
+              fontWeight: FontWeight.w500,
+              color: isCancelled ? Colors.redAccent : theme.textTheme.bodyLarge?.color,
             ),
           ),
         ],
@@ -1311,121 +1041,71 @@ class _EarningsScreenState extends State<EarningsScreen> {
   }
 
   Widget _buildPendingPaymentsCard() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Pending Payments',
-                style: GoogleFonts.dmSans(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: TruxifyColors.accentLight,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '₹4,700',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: TruxifyColors.accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...pendingPayments.map((item) {
-            final joinedNames = item.customerName
-                .split(' ')
-                .map((e) => e.isNotEmpty ? e[0] : '')
-                .join('');
-            final initials = joinedNames.length > 2
-                ? joinedNames.substring(0, 2).toUpperCase()
-                : joinedNames.toUpperCase();
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final cardColor = isDarkMode ? theme.colorScheme.surface.withOpacity(0.5) : theme.cardColor;
 
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12.0),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: TruxifyColors.accentVeryLight,
-                    ),
-                    child: Center(
-                      child: Text(
-                        initials.isNotEmpty ? initials : 'C',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: TruxifyColors.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.customerName,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${item.route} · ${item.note}',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 12,
-                            color: TruxifyColors.adaptiveSecondaryText(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    item.amount,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                ],
+    return Card(
+      elevation: 0,
+      color: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pending Payments',
+              style: GoogleFonts.rubik(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: theme.textTheme.bodyLarge?.color,
               ),
-            );
-          }),
+            ),
+            const SizedBox(height: 16),
+            ...pendingPayments.map((payment) => _buildPaymentItem(payment)).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentItem(Map<String, String> payment) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        children: [
+          const Icon(Icons.receipt_long_outlined, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  payment['customer']!,
+                  style: GoogleFonts.roboto(
+                    fontWeight: FontWeight.bold,
+                    color: theme.textTheme.bodyLarge?.color,
+                  ),
+                ),
+                Text(
+                  'Due on ${payment['dueDate']}',
+                  style: GoogleFonts.roboto(
+                    fontSize: 12,
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            payment['amount']!,
+            style: GoogleFonts.rubik(
+              fontWeight: FontWeight.w500,
+              color: theme.textTheme.bodyLarge?.color,
+            ),
+          ),
         ],
       ),
     );
